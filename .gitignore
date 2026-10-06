@@ -1,0 +1,8 @@
+# Raw source data and generated Spark store
+data/*.csv
+data_parquet/
+
+# Local run artifacts
+logs/
+src/__pycache__/
+.DS_Store
