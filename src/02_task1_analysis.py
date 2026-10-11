@@ -23,6 +23,7 @@ distinction matters.
 """
 from __future__ import annotations
 
+import math
 import sys
 import time
 from pathlib import Path
@@ -35,26 +36,215 @@ import pyspark.sql.functions as F
 from pyspark.sql.window import Window
 
 from common import (DATA_PARQUET, EXPECTED_INTERVALS_PER_DAY, WET_5MIN_MM,
-                    WET_DAY_MM, spark_session, write_table)
+                    WET_DAY_MM, YEARS, spark_session, write_table)
+from task2_lib import add_future_target, add_time_features
 
 MIN_SLOT_FRAC = 0.80          # >= 80 % of 288 slots for a usable station-day
 MIN_STATIONS = 20             # >= 20 usable gauges for a usable island-day
-MIN_SLOTS = int(MIN_SLOT_FRAC * EXPECTED_INTERVALS_PER_DAY)
+MIN_SLOTS = math.ceil(MIN_SLOT_FRAC * EXPECTED_INTERVALS_PER_DAY)   # 231 (230/288 = 79.9 %)
 EVENT_GAP_MIN = 30            # dry gap that separates two rainfall events
 
-SEASONS = [
-    ("NE Monsoon (Dec-Mar)", [12, 1, 2, 3]),
-    ("Inter-monsoon (Apr-May)", [4, 5]),
-    ("SW Monsoon (Jun-Sep)", [6, 7, 8, 9]),
-    ("Inter-monsoon (Oct-Nov)", [10, 11]),
-]
+from task2_lib import season_col
 
 
-def season_col(month_col):
-    expr = F.lit(None).cast("string")
-    for name, months in reversed(SEASONS):
-        expr = F.when(month_col.isin(months), F.lit(name)).otherwise(expr)
-    return expr
+def island_series(station_day, min_stations, stations=None):
+    """Unweighted mean of usable station-day totals -> one row per island-day."""
+    sd = station_day.filter(F.col("usable"))
+    if stations is not None:
+        sd = sd.filter(F.col("station_id").isin(list(stations)))
+    out = (
+        sd.groupBy("date", "year", "month", "doy", "season")
+        .agg(
+            F.count(F.lit(1)).alias("n_stations"),
+            F.avg("day_mm").alias("island_mm"),
+            F.max("day_mm").alias("wettest_station_mm"),
+            F.avg((F.col("day_mm") >= WET_DAY_MM).cast("double")).alias("frac_stations_wet"),
+            F.max("max_5min_mm").alias("peak_5min_mm"),
+        )
+        .filter(F.col("n_stations") >= min_stations)
+        .toPandas()
+    )
+    out["date"] = pd.to_datetime(out["date"])
+    out = out.sort_values("date").reset_index(drop=True)
+    out["is_wet_day"] = (out["island_mm"] >= WET_DAY_MM).astype(int)
+    return out
+
+
+def gapfill(island_day, calendar):
+    """Calendar-complete series; missing days take the (month, day) climatology."""
+    full = calendar.merge(island_day[["date", "island_mm"]], on="date", how="left")
+    full["year"] = full["date"].dt.year
+    full["doy"] = full["date"].dt.dayofyear
+    full["md"] = full["date"].dt.month * 100 + full["date"].dt.day
+    full["observed"] = full["island_mm"].notna().astype(int)
+    clim = full.groupby("md")["island_mm"].mean()
+    clim = clim.reindex(sorted(full["md"].unique())).ffill().bfill()   # 29 Feb with no donor
+    full["filled_mm"] = full["island_mm"].fillna(full["md"].map(clim))
+    return full
+
+
+def annual_table(full, cov):
+    obs = full[full["observed"] == 1]
+    annual = pd.DataFrame({"year": sorted(full["year"].unique())})
+    annual = annual.merge(
+        obs.groupby("year").agg(
+            days_observed=("island_mm", "size"),
+            observed_total_mm=("island_mm", "sum"),
+            mean_daily_mm=("island_mm", "mean"),
+            wet_days=("island_mm", lambda s: int((s >= WET_DAY_MM).sum())),
+            p95_daily_mm=("island_mm", lambda s: float(np.percentile(s, 95))),
+            max_daily_mm=("island_mm", "max"),
+        ).reset_index(), on="year", how="left")
+    annual = annual.merge(
+        full.groupby("year").agg(
+            days_in_year=("island_mm", "size"),
+            gapfilled_total_mm=("filled_mm", "sum"),
+        ).reset_index(), on="year", how="left")
+    annual["days_missing"] = annual["days_in_year"] - annual["days_observed"]
+    # scale wet-day count to a full year so the count is comparable across years
+    annual["wet_days_scaled"] = (
+        annual["wet_days"] * annual["days_in_year"] / annual["days_observed"]
+    ).round(1)
+    annual = annual.merge(
+        cov.groupby("year").agg(stations_active=("station_id", "size")).reset_index(),
+        on="year", how="left")
+    return annual
+
+
+def monthly_table(full):
+    mon = full.copy()
+    mon["month"] = mon["date"].dt.month
+    monthly = mon.groupby(["year", "month"]).agg(
+        total_mm=("filled_mm", "sum"),
+        observed_total_mm=("island_mm", "sum"),
+        days_observed=("observed", "sum"),
+        days=("observed", "size"),
+    ).reset_index()
+    monthly["complete"] = (monthly["days_observed"] >= 0.9 * monthly["days"]).astype(int)
+    clim_m = monthly.groupby("month")["total_mm"].mean().rename("clim_mm")
+    monthly = monthly.merge(clim_m, on="month")
+    monthly["anomaly_mm"] = monthly["total_mm"] - monthly["clim_mm"]
+    monthly["anomaly_pct"] = 100 * monthly["anomaly_mm"] / monthly["clim_mm"]
+    return monthly
+
+
+def spearman(a, b):
+    """Rank correlation without a SciPy dependency."""
+    return a.rank().corr(b.rank())
+
+
+def longest_below_run(monthly):
+    """Longest unbroken run of below-average months (anomaly < 0)."""
+    best = run = 0
+    for v in monthly.sort_values(["year", "month"])["anomaly_mm"]:
+        run = run + 1 if v < 0 else 0
+        best = max(best, run)
+    return best
+
+
+def sensitivity_annual(full_a, fx_a, n_cohort):
+    """Side-by-side annual results. Absolute levels differ between networks
+    (different gauges), so shape is compared via an index to each network's own
+    8-year mean."""
+    out = pd.DataFrame({"year": full_a["year"]})
+    for tag, a in [("full", full_a), ("fixed", fx_a)]:
+        out[f"total_mm_{tag}"] = a["gapfilled_total_mm"].round(1)
+        out[f"index_{tag}"] = (100 * a["gapfilled_total_mm"] / a["gapfilled_total_mm"].mean()).round(1)
+        out[f"rank_{tag}"] = a["gapfilled_total_mm"].rank(ascending=False).astype(int)
+        out[f"wet_days_{tag}"] = a["wet_days_scaled"]
+        out[f"mm_per_wet_day_{tag}"] = (a["gapfilled_total_mm"] / a["wet_days_scaled"]).round(2)
+        out[f"days_missing_{tag}"] = a["days_missing"]
+    out["index_diff_pp"] = (out["index_fixed"] - out["index_full"]).round(1)
+    out["n_stations_fixed"] = n_cohort
+    return out
+
+
+def sensitivity_monthly(full_m, fx_m):
+    out = pd.DataFrame({"month": range(1, 13)})
+    for tag, m in [("full", full_m), ("fixed", fx_m)]:
+        c = m.groupby("month")["total_mm"].mean()
+        out[f"clim_mm_{tag}"] = out["month"].map(c).round(1)
+        out[f"share_pct_{tag}"] = (100 * out[f"clim_mm_{tag}"] / out[f"clim_mm_{tag}"].sum()).round(2)
+        out[f"rank_{tag}"] = out[f"clim_mm_{tag}"].rank(ascending=False).astype(int)
+    out["share_diff_pp"] = (out["share_pct_fixed"] - out["share_pct_full"]).round(2)
+    return out
+
+
+def sensitivity_summary(full_a, fx_a, full_m, fx_m, cohort, min_fixed):
+    rows = []
+
+    def add(metric, value, note=""):
+        rows.append({"metric": metric, "value": value, "note": note})
+
+    ta, tf = full_a["gapfilled_total_mm"], fx_a["gapfilled_total_mm"]
+    ia, i_f = ta / ta.mean(), tf / tf.mean()
+    add("fixed_network_stations", len(cohort), ",".join(cohort))
+    add("fixed_island_day_min_stations", min_fixed, "80% of the cohort")
+    add("annual_total_spearman", round(float(spearman(ta, tf)), 3), "rank agreement")
+    add("annual_total_pearson", round(float(ta.corr(tf)), 3), "")
+    add("wettest_year_full/fixed", f"{int(full_a.loc[ta.idxmax(), 'year'])}/{int(fx_a.loc[tf.idxmax(), 'year'])}", "")
+    add("driest_year_full/fixed", f"{int(full_a.loc[ta.idxmin(), 'year'])}/{int(fx_a.loc[tf.idxmin(), 'year'])}", "")
+    add("max_abs_annual_index_diff_pp", round(float((100 * (i_f - ia)).abs().max()), 1),
+        "index to own 8-yr mean, percentage points")
+    add("annual_range_pct_full/fixed",
+        f"{100 * (ta.max() / ta.min() - 1):.0f}/{100 * (tf.max() / tf.min() - 1):.0f}", "(max/min - 1)")
+    wa, wf = full_a["wet_days_scaled"], fx_a["wet_days_scaled"]
+    add("wet_days_spearman", round(float(spearman(wa, wf)), 3), "")
+    inta, intf = ta / wa, tf / wf
+    pre = full_a["year"] <= 2019
+    add("intensity_every_year_2020-24_above_2017-19_mean_full/fixed",
+        f"{bool((inta[~pre] > inta[pre].mean()).all())}/{bool((intf[~pre] > intf[pre].mean()).all())}",
+        "mm per wet day")
+    add("intensity_2020-24_mean_vs_2017-19_mean_pct_full/fixed",
+        f"{100 * (inta[~pre].mean() / inta[pre].mean() - 1):.0f}/{100 * (intf[~pre].mean() / intf[pre].mean() - 1):.0f}", "")
+    ca = full_m.groupby("month")["total_mm"].mean()
+    cf = fx_m.groupby("month")["total_mm"].mean()
+    add("monthly_climatology_spearman", round(float(spearman(ca, cf)), 3), "")
+    add("wettest_month_full/fixed", f"{int(ca.idxmax())}/{int(cf.idxmax())}", "")
+    add("driest_month_full/fixed", f"{int(ca.idxmin())}/{int(cf.idxmin())}", "")
+    fm = full_m.sort_values(["year", "month"]).reset_index(drop=True)
+    xm = fx_m.sort_values(["year", "month"]).reset_index(drop=True)
+    add("monthly_anomaly_pct_pearson", round(float(fm["anomaly_pct"].corr(xm["anomaly_pct"])), 3), "96 months")
+    add("monthly_anomaly_sign_agreement_pct",
+        round(float(100 * (np.sign(fm["anomaly_mm"]) == np.sign(xm["anomaly_mm"])).mean()), 1), "")
+    add("longest_below_average_run_months_full/fixed",
+        f"{longest_below_run(full_m)}/{longest_below_run(fx_m)}", "")
+    # how many months of the full network's longest run are also below average
+    # in the fixed network? (distinguishes a flipped marginal month from a
+    # genuinely different drought)
+    neg = (fm["anomaly_mm"] < 0).to_numpy()
+    best = run = end = 0
+    for i, flag in enumerate(neg):
+        run = run + 1 if flag else 0
+        if run > best:
+            best, end = run, i
+    win = slice(end - best + 1, end + 1)
+    add("below_average_months_in_full_longest_run_full/fixed",
+        f"{int(neg[win].sum())}/{int((xm['anomaly_mm'].to_numpy()[win] < 0).sum())}",
+        f"{fm['year'][end - best + 1]}-{fm['month'][end - best + 1]:02d} to {fm['year'][end]}-{fm['month'][end]:02d}")
+    changed = [f"{int(y)} (full #{rf_}, fixed #{rx_}, index {a_:.1f}/{b_:.1f})"
+               for y, rf_, rx_, a_, b_ in zip(
+                   full_a["year"], ta.rank(ascending=False), tf.rank(ascending=False),
+                   100 * ia, 100 * i_f) if rf_ != rx_]
+    add("years_whose_rank_changes", "; ".join(changed) or "none",
+        "all swaps are between years whose index differs by only a few percentage points")
+    # pre-declared headline checks (not tuned after seeing the result)
+    checks = {
+        "driest year identical": full_a.loc[ta.idxmin(), "year"] == fx_a.loc[tf.idxmin(), "year"],
+        "annual totals Pearson >= 0.95": ta.corr(tf) >= 0.95,
+        "max annual index difference <= 5 pp": float((100 * (i_f - ia)).abs().max()) <= 5.0,
+        "annual range within 5 pp": abs(100 * ((ta.max() / ta.min()) - (tf.max() / tf.min()))) <= 5.0,
+        "monthly climatology Spearman >= 0.9, wettest & driest month identical":
+            spearman(ca, cf) >= 0.9 and ca.idxmax() == cf.idxmax() and ca.idxmin() == cf.idxmin(),
+        "monthly anomaly r >= 0.9": fm["anomaly_pct"].corr(xm["anomaly_pct"]) >= 0.9,
+        "post-2019 intensity above 2017-19 level in both":
+            bool((inta[~pre] > inta[pre].mean()).all() and (intf[~pre] > intf[pre].mean()).all()),
+    }
+    for k, v in checks.items():
+        add(f"check: {k}", "PASS" if v else "FAIL")
+    add("verdict", "HEADLINE CONCLUSIONS ROBUST" if all(checks.values()) else "MATERIAL CHANGE - REVIEW",
+        "see years_whose_rank_changes and longest_below_average_run for the fragile details")
+    return pd.DataFrame(rows)
 
 
 def main() -> None:
@@ -117,62 +307,16 @@ def main() -> None:
     # =====================================================================
     # B. Island areal daily series  (the backbone of every temporal figure)
     # =====================================================================
-    island_day = (
-        station_day.filter(F.col("usable"))
-        .groupBy("date", "year", "month", "doy", "season")
-        .agg(
-            F.count(F.lit(1)).alias("n_stations"),
-            F.avg("day_mm").alias("island_mm"),
-            F.max("day_mm").alias("wettest_station_mm"),
-            F.avg((F.col("day_mm") >= WET_DAY_MM).cast("double")).alias("frac_stations_wet"),
-            F.max("max_5min_mm").alias("peak_5min_mm"),
-        )
-        .filter(F.col("n_stations") >= MIN_STATIONS)
-        .toPandas()
-    )
-    island_day["date"] = pd.to_datetime(island_day["date"])
-    island_day = island_day.sort_values("date").reset_index(drop=True)
-    island_day["is_wet_day"] = (island_day["island_mm"] >= WET_DAY_MM).astype(int)
+    island_day = island_series(station_day, MIN_STATIONS)
     write_table(island_day, "t05_island_daily")
 
-    full = calendar.merge(island_day[["date", "island_mm"]], on="date", how="left")
-    full["year"] = full["date"].dt.year
-    full["doy"] = full["date"].dt.dayofyear
-    full["observed"] = full["island_mm"].notna().astype(int)
-    # day-of-year climatology from the observed days only
-    clim = full.groupby("doy")["island_mm"].mean()
-    full["filled_mm"] = full["island_mm"].fillna(full["doy"].map(clim))
+    full = gapfill(island_day, calendar)
     write_table(full, "t06_island_daily_gapfilled")
 
     # =====================================================================
     # C. Annual summary
     # =====================================================================
-    obs = full[full["observed"] == 1]
-    annual = pd.DataFrame({
-        "year": sorted(full["year"].unique()),
-    })
-    annual = annual.merge(
-        obs.groupby("year").agg(
-            days_observed=("island_mm", "size"),
-            observed_total_mm=("island_mm", "sum"),
-            mean_daily_mm=("island_mm", "mean"),
-            wet_days=("island_mm", lambda s: int((s >= WET_DAY_MM).sum())),
-            p95_daily_mm=("island_mm", lambda s: float(np.percentile(s, 95))),
-            max_daily_mm=("island_mm", "max"),
-        ).reset_index(), on="year", how="left")
-    annual = annual.merge(
-        full.groupby("year").agg(
-            days_in_year=("island_mm", "size"),
-            gapfilled_total_mm=("filled_mm", "sum"),
-        ).reset_index(), on="year", how="left")
-    annual["days_missing"] = annual["days_in_year"] - annual["days_observed"]
-    # scale wet-day count to a full year so the count is comparable across years
-    annual["wet_days_scaled"] = (
-        annual["wet_days"] * annual["days_in_year"] / annual["days_observed"]
-    ).round(1)
-    annual = annual.merge(
-        cov.groupby("year").agg(stations_active=("station_id", "size")).reset_index(),
-        on="year", how="left")
+    annual = annual_table(full, cov)
     write_table(annual, "t07_annual_summary")
     print(annual.to_string(index=False))
 
@@ -181,20 +325,31 @@ def main() -> None:
     # =====================================================================
     # D1. month x year totals (built from the gap-filled daily series so that
     #     an incomplete month is not silently reported as a dry month)
-    mon = full.copy()
-    mon["month"] = mon["date"].dt.month
-    monthly = mon.groupby(["year", "month"]).agg(
-        total_mm=("filled_mm", "sum"),
-        observed_total_mm=("island_mm", "sum"),
-        days_observed=("observed", "sum"),
-        days=("observed", "size"),
-    ).reset_index()
-    monthly["complete"] = (monthly["days_observed"] >= 0.9 * monthly["days"]).astype(int)
-    clim_m = monthly.groupby("month")["total_mm"].mean().rename("clim_mm")
-    monthly = monthly.merge(clim_m, on="month")
-    monthly["anomaly_mm"] = monthly["total_mm"] - monthly["clim_mm"]
-    monthly["anomaly_pct"] = 100 * monthly["anomaly_mm"] / monthly["clim_mm"]
+    monthly = monthly_table(full)
     write_table(monthly.sort_values(["year", "month"]), "t08_monthly")
+
+    # =====================================================================
+    # C2. Sensitivity: fixed gauge network
+    # =====================================================================
+    # The island mean above averages whichever gauges pass QC each day, so the
+    # spatial sample changes through time. With a strong west-east gradient
+    # (section G) that can leak into the temporal results. Re-derive the same
+    # products from the stations that reach >= 80 % coverage in EVERY year.
+    ok_years = (cov.assign(ok=cov["coverage"] >= MIN_SLOT_FRAC)
+                .groupby("station_id").agg(n=("year", "size"), ok=("ok", "sum")))
+    cohort = sorted(ok_years[(ok_years["n"] == len(YEARS)) & (ok_years["ok"] == len(YEARS))].index)
+    min_fixed = math.ceil(MIN_SLOT_FRAC * len(cohort))
+    print(f"[task1] fixed-network cohort: {len(cohort)} stations, island-day needs >= {min_fixed}")
+    fx_day = island_series(station_day, min_fixed, cohort)
+    fx_full = gapfill(fx_day, calendar)
+    fx_annual = annual_table(fx_full, cov[cov["station_id"].isin(cohort)])
+    fx_monthly = monthly_table(fx_full)
+    write_table(sensitivity_annual(annual, fx_annual, len(cohort)), "t22_sensitivity_annual")
+    write_table(sensitivity_monthly(monthly, fx_monthly), "t23_sensitivity_monthly")
+    summ = sensitivity_summary(annual, fx_annual, monthly, fx_monthly, cohort, min_fixed)
+    write_table(summ, "t24_sensitivity_summary")
+    print(summ.to_string(index=False))
+
 
     # D2. seasonal totals per year
     seasonal = (
@@ -290,7 +445,7 @@ def main() -> None:
             F.sum((F.col("acc30") >= 10).cast("long")).alias("n_acc30_ge10"),
             F.sum((F.col("acc30") >= 20).cast("long")).alias("n_acc30_ge20"),
             F.count(F.lit(1)).alias("n_slots"),
-            F.expr("percentile_approx(acc30, 0.9999)").alias("p9999_30min_mm"),
+            F.expr("percentile_approx(acc30, 0.9999, 1000000)").alias("p9999_30min_mm"),
         )
         .toPandas()
         .sort_values("year")
@@ -299,16 +454,22 @@ def main() -> None:
         extremes[c.replace("n_", "rate_")] = extremes[c] / extremes["n_slots"]
     write_table(extremes, "t14_extremes_annual")
 
-    # F4. the exact quantity Task 2 has to predict: P(next-30-min > threshold)
-    #     as a base rate, by season and hour - motivates the classifier design.
+    # F4. the quantity Task 2 has to predict: P(rain in the NEXT 30 min > h)
+    #     as a base rate, by season and hour of the PREDICTION time. Forward
+    #     window, strict ">", complete six-slot windows only (task2_lib).
+    fwd = add_time_features(add_future_target(
+        df.select("station_id", "ts", "rain_mm")))
+    n_all = fwd.count()
+    fwd = fwd.filter(F.col("future_30min_mm").isNotNull())
+    print(f"[task1] forward-window rows: {fwd.count():,} of {n_all:,} have all six future slots")
     base = (
-        roll.withColumn("hour", F.hour("ts"))
-        .groupBy("season", "hour")
+        fwd.groupBy("season", "hour")
         .agg(
-            F.avg((F.col("acc30") >= 0.2).cast("double")).alias("p_gt_0p2"),
-            F.avg((F.col("acc30") >= 1.0).cast("double")).alias("p_gt_1"),
-            F.avg((F.col("acc30") >= 5.0).cast("double")).alias("p_gt_5"),
-            F.avg((F.col("acc30") >= 10.0).cast("double")).alias("p_gt_10"),
+            F.avg((F.col("future_30min_mm") > 0.2).cast("double")).alias("p_gt_0p2"),
+            F.avg((F.col("future_30min_mm") > 1.0).cast("double")).alias("p_gt_1"),
+            F.avg((F.col("future_30min_mm") > 5.0).cast("double")).alias("p_gt_5"),
+            F.avg((F.col("future_30min_mm") > 10.0).cast("double")).alias("p_gt_10"),
+            F.avg((F.col("future_30min_mm") > 20.0).cast("double")).alias("p_gt_20"),
             F.count(F.lit(1)).alias("n"),
         )
         .toPandas()

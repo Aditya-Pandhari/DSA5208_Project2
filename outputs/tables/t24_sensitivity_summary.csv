@@ -1,0 +1,28 @@
+metric,value,note
+fixed_network_stations,21,"S08,S107,S113,S114,S115,S116,S119,S121,S24,S33,S40,S43,S77,S78,S79,S81,S88,S89,S90,S900,S94"
+fixed_island_day_min_stations,17,80% of the cohort
+annual_total_spearman,0.881,rank agreement
+annual_total_pearson,0.987,
+wettest_year_full/fixed,2022/2021,
+driest_year_full/fixed,2019/2019,
+max_abs_annual_index_diff_pp,3.5,"index to own 8-yr mean, percentage points"
+annual_range_pct_full/fixed,63/61,(max/min - 1)
+wet_days_spearman,0.952,
+intensity_every_year_2020-24_above_2017-19_mean_full/fixed,True/True,mm per wet day
+intensity_2020-24_mean_vs_2017-19_mean_pct_full/fixed,16/14,
+monthly_climatology_spearman,1.0,
+wettest_month_full/fixed,11/11,
+driest_month_full/fixed,2/2,
+monthly_anomaly_pct_pearson,0.993,96 months
+monthly_anomaly_sign_agreement_pct,95.8,
+longest_below_average_run_months_full/fixed,12/6,
+below_average_months_in_full_longest_run_full/fixed,12/11,2018-12 to 2019-11
+years_whose_rank_changes,"2020 (full #6.0, fixed #4.0, index 100.6/103.4); 2021 (full #2.0, fixed #1.0, index 111.1/111.4); 2022 (full #1.0, fixed #2.0, index 111.3/109.1); 2024 (full #4.0, fixed #6.0, index 103.7/100.7)",all swaps are between years whose index differs by only a few percentage points
+check: driest year identical,PASS,
+check: annual totals Pearson >= 0.95,PASS,
+check: max annual index difference <= 5 pp,PASS,
+check: annual range within 5 pp,PASS,
+"check: monthly climatology Spearman >= 0.9, wettest & driest month identical",PASS,
+check: monthly anomaly r >= 0.9,PASS,
+check: post-2019 intensity above 2017-19 level in both,PASS,
+verdict,HEADLINE CONCLUSIONS ROBUST,see years_whose_rank_changes and longest_below_average_run for the fragile details

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +27,10 @@ EXPECTED_INTERVALS_PER_DAY = 288
 def spark_session(app_name: str, shuffle_partitions: int = 64, driver_mem: str = "12g"):
     """Build a local Spark session tuned for a single multi-core workstation."""
     from pyspark.sql import SparkSession
+
+    # workers must run the same interpreter as the driver (needed whenever Python
+    # objects, e.g. createDataFrame from a list, cross into the JVM)
+    os.environ.setdefault("PYSPARK_PYTHON", sys.executable)
 
     cores = os.environ.get("SPARK_LOCAL_CORES", "*")
     builder = (

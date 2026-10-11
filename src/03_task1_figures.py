@@ -137,7 +137,7 @@ def fig01_coverage() -> None:
                  "A changing gauge network, not a changing climate, is the first thing the raw data shows",
                  "Before any weather signal can be read, the record has to be audited. The network triples in places and vanishes in others, so\n"
                  "island-wide figures in this report are areal means over gauges that pass a completeness rule, never raw averages over rows.")
-    V.sourcenote(fig, SRC + "\nQC rule: a station-day needs ≥230 of 288 five-minute slots; an island-day needs ≥20 such stations.")
+    V.sourcenote(fig, SRC + "\nQC rule: a station-day needs ≥231 of 288 five-minute slots (≥80%); an island-day needs ≥20 such stations.")
     V.save(fig, FIGURES / "fig01_data_foundation.png")
 
 
@@ -171,7 +171,7 @@ def fig02_annual() -> None:
     ax.set_ylim(0, 3450)
     ax.set_xlim(-0.65, len(a) + 0.45)
     ax.set_ylabel("Island areal rainfall (mm)")
-    ax.set_title("a   Annual rainfall varies by 63% across eight years", pad=32)
+    ax.set_title(f"a   Annual rainfall varies by {100 * (a['gapfilled_total_mm'].max() / a['gapfilled_total_mm'].min() - 1):.0f}% across eight years", pad=32)
     ax.legend(loc="lower left", bbox_to_anchor=(0, 1.02), ncol=2, fontsize=8.4)
     V.despine(ax)
     ax.grid(axis="x", visible=False)
@@ -214,13 +214,19 @@ def fig02_annual() -> None:
     ax.grid(axis="x", visible=False)
     pad_ylim(ax)
 
+    y19, y17 = a[a["year"] == 2019].iloc[0], a[a["year"] == 2017].iloc[0]
+    norm_wet = a.loc[a["year"] != 2019, "wet_days_scaled"].mean()
+    post = intensity[a["year"] >= 2020]
+    pre = intensity[a["year"] <= 2019]
     V.layout(fig, header=2.25, footer=1.00, left=1.05)
     V.titleblock(fig,
                  "2019 was dry because it rained less often, not because the rain got lighter",
-                 "Splitting the annual total into frequency \u00d7 intensity separates the two ways a year can be dry. The 2019 deficit "
-                 "(1,775 mm, a positive-IOD\ndrought year) is a collapse in wet-day count, 172 days against a 225-day norm, while the rain that did fall was no "
-                 "lighter than 2017's.\nPanel c carries a separate signal worth noting: per-wet-day intensity climbs steadily after 2019, so the network is seeing "
-                 "fewer but heavier\nwet days in recent years. Panels b and c are drawn on their own axes rather than twinned onto panel a.")
+                 f"Splitting the annual total into frequency \u00d7 intensity separates the two ways a year can be dry. The 2019 deficit "
+                 f"({y19['gapfilled_total_mm']:,.0f} mm; it coincides with a positive Indian Ocean Dipole in external climate records) is a collapse in wet-day count,\n"
+                 f"{y19['wet_days_scaled']:.0f} days against a {norm_wet:.0f}-day average for the other years, while the rain that did fall was no lighter than 2017's. "
+                 f"Panel c carries a separate signal:\nper-wet-day intensity rises sharply after 2019 and remains generally above the 2017\u20132019 level "
+                 f"({post.mean():.1f} vs {pre.mean():.1f} mm), although it varies from year to year.\n"
+                 "Panels b and c are drawn on their own axes rather than twinned onto panel a.")
     V.sourcenote(fig, SRC + "\nWet-day counts are rescaled to a 365-day year so that years with missing days stay comparable.")
     V.save(fig, FIGURES / "fig02_annual_totals.png")
 
@@ -284,10 +290,11 @@ def fig03_seasonal() -> None:
     V.layout(fig, header=2.05, footer=1.00, left=0.8)
     V.titleblock(fig,
                  "A double wet season, and a year-to-year spread that swamps it",
-                 "November–January (north-east monsoon) and April–May (inter-monsoon) are the wet peaks; February and July are the dry "
-                 "troughs. But the\nsame calendar month ranges over a factor of ten between years. February spans 32 mm (2021) to 352 mm (2023), "
+                 "November–January (north-east monsoon season) and April–May (inter-monsoon) are the wet peaks; February and July are the dry "
+                 "troughs. But the\nsame calendar month can differ by a factor of ten between years: "
+                 f"February spans {grid.loc[2].min():.0f} mm ({grid.loc[2].idxmin()}) to {grid.loc[2].max():.0f} mm ({grid.loc[2].idxmax()}). "
                  "Any monthly\nclimatology for Singapore is therefore a weak predictor of any individual month.")
-    V.sourcenote(fig, SRC + "\nRed outline: month whose source record is <90% complete, filled from the day-of-year climatology of the other years.")
+    V.sourcenote(fig, SRC + "\nRed outline: month whose source record is <90% complete, filled from the (month, day) climatology of the other years.")
     V.save(fig, FIGURES / "fig03_seasonal_cycle.png")
 
 
@@ -324,14 +331,19 @@ def fig04_anomaly() -> None:
         if run > best:
             best, best_end = run, i
     run_start, run_end = m["t"].iloc[best_end - best + 1], m["t"].iloc[best_end]
+    sens = T("t24_sensitivity_summary").set_index("metric")["value"]
+    n_fixed = int(sens["fixed_network_stations"])
+    fixed_neg = sens["below_average_months_in_full_longest_run_full/fixed"].split("/")[1]
+    top = m.nlargest(3, "anomaly_mm")
+    wet1, wet3 = top.iloc[0], m[(m["year"] == 2023) & (m["month"] == 2)].iloc[0]
     for lbl, xy, xytext in [
-        (f"the 2019 positive-IOD drought:\n{best} consecutive below-average months\n"
+        (f"the 2019 dry spell:\n{best} consecutive below-average months\n"
          f"({run_start:%b %Y} \u2013 {run_end:%b %Y})",
          (pd.Timestamp("2019-06-15"), -60), (pd.Timestamp("2018-08-01"), 128)),
-        ("Aug 2021, the wettest month\nin the record (+231 mm)",
-         (pd.Timestamp("2021-08-15"), 228), (pd.Timestamp("2019-12-01"), 196)),
-        ("Feb 2023 (+208 mm)",
-         (pd.Timestamp("2023-02-15"), 212), (pd.Timestamp("2023-06-10"), 243)),
+        (f"{wet1['t']:%b %Y}, the wettest month\nin the record (+{wet1['anomaly_mm']:.0f} mm)",
+         (wet1["t"], wet1["anomaly_mm"] - 3), (pd.Timestamp("2019-12-01"), 196)),
+        (f"{wet3['t']:%b %Y} (+{wet3['anomaly_mm']:.0f} mm)",
+         (wet3["t"], wet3["anomaly_mm"] - 3), (pd.Timestamp("2023-06-10"), 243)),
     ]:
         ax.annotate(lbl, xy=xy, xytext=xytext, fontsize=8.2, color=V.INK_2,
                     ha="left", va="center",
@@ -339,7 +351,7 @@ def fig04_anomaly() -> None:
                                     connectionstyle="angle3,angleA=0,angleB=60"))
 
     ax = axes[1]
-    roll = m.set_index("t")["total_mm"].rolling(12, min_periods=9).sum()
+    roll = m.set_index("t")["total_mm"].rolling(12, min_periods=12).sum()   # genuine 12-month window
     ax.plot(roll.index, roll.values, color=V.BLUE, zorder=3)
     ax.axhline(T("t07_annual_summary")["gapfilled_total_mm"].mean(), color=V.INK_2,
                lw=1.1, ls=(0, (4, 3)), zorder=2)
@@ -355,10 +367,11 @@ def fig04_anomaly() -> None:
     V.layout(fig, header=2.05, footer=1.00, left=1.25)
     V.titleblock(fig,
                  "Wet and dry spells in Singapore run for seasons, not for months",
-                 f"Anomalies are strongly autocorrelated: the 2019 drought runs {best} consecutive below-average months, and the 2021–2022 "
-                 "La Niña\nperiod delivers a sustained surplus. This persistence is what makes the year-to-year spread in Figure 3 so large. It is "
-                 "also a reason\na short-horizon forecast (Task 2) should be given recent-rainfall state, not just a calendar position.")
-    V.sourcenote(fig, SRC + "\nAnomalies are computed against each calendar month's own 2017–2024 mean, from the gap-filled island daily series.")
+                 f"Anomalies are strongly autocorrelated: the 2019 dry spell runs {best} consecutive below-average months (the sustained 2021–2022 "
+                 "surplus coincides\nwith La Niña conditions in external climate records). The run length is sensitive to one marginal month: on a fixed "
+                 f"{n_fixed}-gauge network {fixed_neg} of those {best}\nmonths are still below average. The persistence is why the year-to-year spread in Figure 3 is so large, and a reason "
+                 "a short-horizon forecast (Task 2)\nshould be given recent-rainfall state, not just a calendar position.")
+    V.sourcenote(fig, SRC + "\nAnomalies are computed against each calendar month's own 2017–2024 mean, from the gap-filled island daily series. Panel b needs 12 months of data (starts Dec 2017).")
     V.save(fig, FIGURES / "fig04_monthly_anomaly.png")
 
 
@@ -395,11 +408,11 @@ def fig05_diurnal() -> None:
                 arrowprops=dict(arrowstyle="-", shrinkA=4, shrinkB=9, color=V.ORANGE, lw=0.9,
                                 connectionstyle="angle3,angleA=10,angleB=-80"))
     ax.set_title("a   Mean rainfall rate by time of day and month (mm/h)")
-    ax.annotate("morning regime\n(Sumatra squalls)", xy=(6.5, 9.5), xytext=(2.4, 6.2),
+    ax.annotate("morning regime\n(south-west monsoon season)", xy=(6.5, 9.5), xytext=(2.4, 6.2),
                 fontsize=8.4, color=V.INK, ha="left", va="center", fontweight="semibold",
                 arrowprops=dict(arrowstyle="-", shrinkA=4, shrinkB=9, color=V.INK_2, lw=1.0,
                                 connectionstyle="angle3,angleA=0,angleB=60"))
-    ax.annotate("afternoon regime\n(local convection)", xy=(10.6, 15.6), xytext=(7.4, 20.4),
+    ax.annotate("afternoon regime\n(daytime convective timing)", xy=(10.6, 15.6), xytext=(7.4, 20.4),
                 fontsize=8.4, color=V.INK, ha="left", va="center", fontweight="semibold",
                 arrowprops=dict(arrowstyle="-", shrinkA=4, shrinkB=9, color=V.INK_2, lw=1.0,
                                 connectionstyle="angle3,angleA=0,angleB=60"))
@@ -437,10 +450,10 @@ def fig05_diurnal() -> None:
     V.layout(fig, header=2.1, footer=1.00, left=0.95)
     V.titleblock(fig,
                  "Singapore has two rainfall clocks, and the monsoon decides which one runs",
-                 "From June to September the south-west monsoon shifts the daily rainfall maximum into the morning. This is the signature of "
-                 "Sumatra squall\nlines that form over the Malacca Strait overnight and sweep east across the island at dawn. In every other season "
-                 "the maximum is a\nsharp mid-afternoon convective peak near 15:00–16:00. The peak hour swings by roughly six hours between "
-                 "the two regimes.")
+                 "From June to September (south-west monsoon season) the daily rainfall maximum moves into the morning. The literature links this "
+                 "timing to Sumatra squall\nlines that develop over the Malacca Strait and reach Singapore around dawn (external source to be cited; not tested with this dataset). "
+                 "In every other season\nthe maximum is a sharp mid-afternoon peak near 15:00\u201316:00, the timing expected of daytime convection. The peak hour swings by "
+                 "roughly six hours between the two regimes.")
     V.sourcenote(fig, SRC + "\nRates are means over all stations and all 5-minute slots in each half-hour bin (dry slots included), so panel b is a true expected rate.")
     V.save(fig, FIGURES / "fig05_diurnal_cycle.png")
 
@@ -511,7 +524,7 @@ def fig06_intensity() -> None:
 
     V.layout(fig, header=1.95, footer=1.00, left=1.1)
     V.titleblock(fig,
-                 "Almost half the rain that falls on Singapore arrives in 10% of the wet minutes",
+                 "Almost half the rain that falls on Singapore arrives in 10% of wet 5-minute intervals",
                  "The concentration curve is near-identical in every year, including the drought: a dry year is not a year of gentler rain, it is "
                  "a year with\nfewer rain events. The heavy tail in panel a is why a rainfall model should be framed as an exceedance probability "
                  "rather than a\nconditional-mean regression, which is exactly how Task 2 is set up.")
@@ -612,9 +625,9 @@ def fig07_spatial() -> None:
                  "Rainfall more than doubles across an island 50 km wide",
                  f"Over the common {COMMON[0]}\u2013{COMMON[-1]} period the wettest gauge records {val.max():,.0f} mm a year "
                  f"and the driest {val.min():,.0f} mm, a factor of {val.max() / val.min():.1f}.\n"
-                 "The wet core sits over the western and central catchments, where sea-breeze convergence and higher terrain favour convection;\n"
-                 "the east and the offshore islands are markedly drier. Station identity therefore carries real predictive information, "
-                 "and Task 2 keeps it as a feature.")
+                 "The wet core sits over the western and central parts of the island and the east and offshore islands are markedly drier; sea-breeze\n"
+                 "convergence and terrain are commonly proposed explanations in the literature but are not tested here. Station identity therefore carries "
+                 "real\npredictive information, and Task 2 keeps location as a feature.")
     V.sourcenote(fig, SRC + "\nA fixed four-year window is used so that gauges commissioned at different times are never compared over different periods. "
                             "The field in panel a is a linear\ninterpolation across the gauge network and is not extrapolated beyond the convex hull of the gauges.")
     V.save(fig, FIGURES / "fig07_spatial_climatology.png")
@@ -695,7 +708,7 @@ def fig08_coherence() -> None:
     V.titleblock(fig,
                  f"Singapore rainfall loses coherence over about {d_emp:.0f} km, a fraction of the island's width",
                  "Gauges less than 2 km apart agree closely on their 30-minute totals ($\\rho$ = 0.84); beyond 20 km they are nearly independent "
-                 "($\\rho$ = 0.15).\nThat is the fingerprint of convective, cell-scale rainfall rather than broad frontal systems, and it carries a "
+                 "($\\rho$ = 0.15).\nThat is consistent with convective, cell-scale rainfall rather than broad frontal systems, and it carries a "
                  "concrete modelling consequence:\na single island-wide forecast cannot be right everywhere at once, so Task 2 predicts per station "
                  "and draws on neighbouring gauges only at short range.")
     V.sourcenote(fig, SRC + f"\n{len(p):,} station pairs, Pearson correlation of concurrent 30-minute totals over 2017\u20132024 "
@@ -791,6 +804,8 @@ def fig09_events() -> None:
 def fig10_extremes() -> None:
     x = T("t14_extremes_annual").sort_values("year")
     b = T("t15_base_rates_30min")
+    r5 = x.set_index("year")["rate_acc30_ge5"]
+    heavy_gain = 100 * (r5.loc[2020:2024].mean() / r5.loc[2017:2019].mean() - 1)
 
     fig, axes = plt.subplots(1, 3, figsize=(13.2, 7.0),
                              gridspec_kw=dict(wspace=0.3))
@@ -847,24 +862,24 @@ def fig10_extremes() -> None:
     ax.set_xlim(0, 23)
     ax.set_xticks(range(0, 24, 4), [f"{h:02d}" for h in range(0, 24, 4)])
     ax.set_xlabel("Hour of day (SGT)")
-    ax.set_ylabel("P(30-min total $\\geq$ 5 mm)  (%)")
-    ax.set_title("c   The Task-2 target, as a base rate")
+    ax.set_ylabel("P(next-30-min total $>$ 5 mm)  (%)")
+    ax.set_title("c   The Task-2 target, as a forward base rate")
     ax.set_ylim(0, 4.3)
     ax.legend(loc="upper left", fontsize=7.6, labelcolor="linecolor")
     V.despine(ax)
     ax.grid(axis="x", visible=False)
-    ax.annotate(f"overall base rate {100 * b['p_gt_5'].mean():.2f}%\n(a severely imbalanced\nclassification problem)",
+    ax.annotate(f"overall base rate {100 * np.average(b['p_gt_5'], weights=b['n']):.2f}%\n(a severely imbalanced\nclassification problem)",
                 xy=(0.98, 0.99), xycoords="axes fraction", ha="right", va="top",
                 fontsize=8.2, color=V.INK_2)
 
     V.layout(fig, header=2.15, footer=1.00, left=1.1)
     V.titleblock(fig,
-                 "Heavy half-hours became about 20% more frequent after 2020, and they keep the same daily rhythm",
-                 "Panel b indexes the frequency of 5, 10 and 20 mm half-hours to 2017. All three rise together into the wet 2021–2022 period and "
-                 "stay\nelevated, so the shift is in how often heavy rain occurs rather than in how heavy the heaviest event gets. The annual "
-                 "maxima in panel a\nshow no trend. Panel c is the quantity Task 2 must estimate, and it makes the class imbalance and the "
-                 "hour × season structure explicit.")
-    V.sourcenote(fig, SRC + "\n30- and 60-minute accumulations are trailing rolling sums computed per gauge over the 5-minute series.")
+                 f"Heavy half-hours became about {heavy_gain:.0f}% more frequent in 2020\u20132024 than in 2017\u20132019, and they keep the same daily rhythm",
+                 "Panel b indexes the frequency of 5, 10 and 20 mm trailing half-hour totals to 2017 (historical accumulations). All three rise into the wet 2021\u20132022 "
+                 "period and stay\nelevated, so the shift is in how often heavy rain occurs rather than in how heavy the heaviest event gets. The annual "
+                 "maxima in panel a show no trend.\nPanel c is the quantity Task 2 must estimate: the probability that the NEXT 30 minutes (strictly) exceed 5 mm, by hour of the "
+                 "prediction time and season,\nwhich makes the class imbalance and the hour \u00d7 season structure explicit.")
+    V.sourcenote(fig, SRC + "\nPanels a, b: trailing 30- and 60-minute accumulations per gauge (history). Panel c: forward window t to t+30 min, six complete 5-minute slots required, strict \">\".")
     V.save(fig, FIGURES / "fig10_extremes.png")
 
 

@@ -1,0 +1,2 @@
+model,threshold_mm,mllib_areaUnderPR,binned_average_precision,mllib_areaUnderROC,binned_roc_auc
+LR_spatial_ix,5.0,0.4418996505496121,0.44473860148717026,0.9268403861635455,0.9267552291550104
