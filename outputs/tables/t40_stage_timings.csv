@@ -1,0 +1,31 @@
+stage,seconds
+1. ingest: CSV -> bronze Parquet,18.2
+2. data-quality audit,6.4
+3a. clean: snap + de-duplicate + station table,11.9
+3b. clean: dead-gauge station-months,2.8
+3c. clean: spike station-days,9.1
+3d. clean: write silver Parquet,14.3
+4a. station-day + coverage tables,2.5
+4b. island daily series + gap fill,1.1
+5.3 fixed-network sensitivity,1.1
+5.4 diurnal cycle,1.6
+5.5 intensity + concentration,1.5
+5.6 station climatology,1.0
+5.7 spatial coherence,4.1
+5.8 rain events,2.2
+5.9 extremes + base rates,22.0
+"7a. feature table (windows, neighbours, calendar, split)",97.2
+7b. feature table audit,16.8
+7c. leakage / label check,24.4
+8. training + evaluation sets,53.9
+9. baselines on 2023,1.8
+"10. fit LR_local (12,238,797 rows)",10.6
+"10. fit LR_spatial (12,238,797 rows)",9.7
+"10. fit LR_spatial_ix (12,238,797 rows)",11.1
+"10. fit LR_spatial_ix_reg (12,238,797 rows)",9.8
+"10. fit GBT_spatial_d5 (4,282,780 rows)",57.4
+"10. fit GBT_spatial_d7 (4,282,780 rows)",83.3
+11a. cut-offs on 2023,10.7
+11b. score 2024 test,28.7
+11c. monotonicity + MLlib cross-check,72.9
+11d. feature effects + threshold sweep,3.9

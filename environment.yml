@@ -1,0 +1,15 @@
+# conda env create -f environment.yml   (then select the "dsa5208" kernel for the notebook)
+# Verified: Python 3.11.17, PySpark 3.5.5, OpenJDK 17.0.18, pandas 3.0.6, NumPy 1.26.4, Matplotlib 3.11.2
+name: dsa5208
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - openjdk=17          # PySpark 3.5 needs Java 17; the notebook uses this JDK automatically
+  - pyspark=3.5
+  - pandas
+  - numpy
+  - matplotlib
+  - pyarrow
+  - ipykernel           # run the notebook in Jupyter / VS Code
+  - nbconvert           # headless execution
