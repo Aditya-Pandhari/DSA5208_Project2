@@ -13,3 +13,6 @@ derby.log
 
 # Spark checksum files; the saved model models/task2_exceedance/ IS tracked
 *.crc
+
+# Office lock files
+~$*
