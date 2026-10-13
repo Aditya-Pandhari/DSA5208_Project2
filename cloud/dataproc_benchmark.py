@@ -76,7 +76,7 @@ def main():
         n = ingest(spark, args.bucket)
         dt = time.time() - t0
         print(f"[{datetime.now():%H:%M:%S}] ingest: {n:,} rows -> bronze in {dt:.1f} s")
-        rows.append({"label": args.label, "job": "ingest (CSV -> bronze Parquet)", "run": 1, "seconds": round(dt, 1), "result": n})
+        rows.append({"label": args.label, "job": "ingest (CSV -> bronze Parquet)", "run": 1, "seconds": round(dt, 1), "result": float(n)})
 
     total = None
     for i in range(args.repeat + 1):
@@ -88,7 +88,7 @@ def main():
         if i > 0:
             rows.append({"label": args.label, "job": "clean (bronze -> dedup -> station-days)", "run": i, "seconds": round(dt, 1), "result": total})
 
-    out = spark.createDataFrame(rows).withColumn("parallelism", F.lit(sc.defaultParallelism)) \
+    out = spark.createDataFrame(rows, "label string, job string, run long, seconds double, result double").withColumn("parallelism", F.lit(sc.defaultParallelism)) \
         .withColumn("spark", F.lit(spark.version)).withColumn("when", F.lit(datetime.now().isoformat(timespec="seconds")))
     out.coalesce(1).write.mode("append").option("header", True).csv(f"{args.bucket}/results/cloud_scaling")
     print(json.dumps(rows, indent=1, default=float))
