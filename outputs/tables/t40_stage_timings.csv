@@ -1,31 +1,68 @@
 stage,seconds
-1. ingest: CSV -> bronze Parquet,18.2
-2. data-quality audit,6.4
-3a. clean: snap + de-duplicate + station table,11.9
-3b. clean: dead-gauge station-months,2.8
-3c. clean: spike station-days,9.1
-3d. clean: write silver Parquet,14.3
+1. ingest: CSV -> bronze Parquet,17.2
+2. data-quality audit,8.6
+3a. clean: snap + de-duplicate + station table,11.7
+3b. clean: dead-gauge station-months,2.6
+3c. clean: spike station-days,8.4
+3d. clean: write silver Parquet,12.9
 4a. station-day + coverage tables,2.5
 4b. island daily series + gap fill,1.1
-5.3 fixed-network sensitivity,1.1
-5.4 diurnal cycle,1.6
-5.5 intensity + concentration,1.5
+5.3 fixed-network sensitivity,1.0
+5.4 diurnal cycle,1.5
+5.5 intensity + concentration,1.1
 5.6 station climatology,1.0
-5.7 spatial coherence,4.1
-5.8 rain events,2.2
-5.9 extremes + base rates,22.0
-"7a. feature table (windows, neighbours, calendar, split)",97.2
-7b. feature table audit,16.8
-7c. leakage / label check,24.4
-8. training + evaluation sets,53.9
-9. baselines on 2023,1.8
-"10. fit LR_local (12,238,797 rows)",10.6
-"10. fit LR_spatial (12,238,797 rows)",9.7
+5.7 spatial coherence,3.5
+5.8 rain events,1.7
+5.9 extremes + base rates,19.9
+"7a. feature table (windows, neighbours, calendar, split)",90.7
+7b. feature table audit,18.2
+7c. leakage / label check,26.5
+8. training + evaluation sets,42.4
+9. baselines on 2023,1.5
+"10. fit LR_local (12,238,797 rows)",10.4
+"10. fit LR_spatial (12,238,797 rows)",9.9
 "10. fit LR_spatial_ix (12,238,797 rows)",11.1
-"10. fit LR_spatial_ix_reg (12,238,797 rows)",9.8
-"10. fit GBT_spatial_d5 (4,282,780 rows)",57.4
-"10. fit GBT_spatial_d7 (4,282,780 rows)",83.3
-11a. cut-offs on 2023,10.7
-11b. score 2024 test,28.7
-11c. monotonicity + MLlib cross-check,72.9
-11d. feature effects + threshold sweep,3.9
+"10. fit LR_spatial_ix_reg (12,238,797 rows)",10.1
+"10. fit GBT_spatial_d5 (4,282,780 rows)",58.8
+"10. fit GBT_spatial_d7 (4,282,780 rows)",78.6
+11a. cut-offs on 2023,9.5
+11b. score 2024 test,26.4
+11c. monotonicity + MLlib cross-check,72.7
+11d. feature effects + threshold sweep,3.8
+12a. final-model station features + target (window functions),28.2
+12b. neighbour + island features (sparse join),22.8
+12c. prediction rows,12.1
+12d. row counts + climatology,0.6
+12e. leakage check (Stage 2 features),6.2
+12f. training sample (down-sampling + threshold expansion),2.5
+13a. correlation + ANOVA ranking,1.8
+14. CV LR selector size (3 settings x 4 folds) [timing from the run that produced the cache],42.0
+14. CV LR (6 settings x 4 folds) [timing from the run that produced the cache],92.6
+14. CV RF (4 settings x 4 folds) [timing from the run that produced the cache],653.9
+14. CV GBT (12 settings x 4 folds) [timing from the run that produced the cache],1801.6
+15a. ablation fit: all selected features (Model B),35.2
+15a. ablation fit: without time,34.3
+15a. ablation fit: without location,34.6
+15a. ablation fit: without recent rain,34.0
+15a. ablation fit: without neighbours,33.5
+15a. ablation fit: without island,34.4
+15a. ablation fit: Model A: threshold + time + station only,32.1
+15b. fit RF on 2017-2022 (for calibration / cut-offs),77.8
+"15c. calibration check (fit on 1st half, judge on 2nd half of 2023)",199.2
+16a. refit LR on 2017-2023,10.4
+16a. refit RF on 2017-2023,288.0
+16a. refit GBT-B on 2017-2023,102.1
+16a. refit GBT-A on 2017-2023,88.4
+16b. score 2024: LR,17.2
+16b. score 2024: RF,98.9
+16b. score 2024: RF uncalibrated,88.2
+16b. score 2024: GBT (Model B),34.0
+16b. score 2024: GBT (Model B) uncalibrated,30.1
+16b. score 2024: GBT (Model A),28.2
+16b. score 2024: GBT (Model A) uncalibrated,24.2
+16b. score 2024: climatology,5.9
+16c. test metrics,123.6
+16d. calibration on 2024,0.4
+16e. cut-offs on 2023 + test confusion,48.6
+16f. skill by season / hour,0.8
+17. head-to-head on identical 2024 rows,8.0

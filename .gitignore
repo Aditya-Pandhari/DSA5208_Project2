@@ -11,8 +11,18 @@ spark-warehouse/
 metastore_db/
 derby.log
 
-# Spark checksum files; the saved model models/task2_exceedance/ IS tracked
+# Spark checksum files; the saved models in models/ ARE tracked
 *.crc
 
 # Office lock files
 ~$*
+
+# reference material from an earlier course project (kept locally, not submitted)
+HousePricePrediction_Report.*
+house_price_prediction.ipynb
+
+# per-grid cross-validation scratch files (removed by the notebook when CV completes)
+outputs/tables/_cv_partial/
+
+# course guide for the cloud setup (reference only)
+comp_res.pdf

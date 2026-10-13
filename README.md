@@ -7,28 +7,29 @@ Apache Spark analysis of the data.gov.sg five-minute rainfall record:
   given the station, the prediction time and the threshold (Spark MLlib).
 
 Everything (ingestion, cleaning, pre-processing, the Task 1 analysis, feature engineering, baseline and candidate
-models, evaluation and the prediction function) is in **one notebook, `DSA5208_Project2.ipynb`**, saved with the
-output of every cell, so the whole process can be read top to bottom without running it.
+models, cross-validation, evaluation and the prediction function) is in **one notebook, `DSA5208_Project2.ipynb`**.
+Once executed it keeps the output of every cell, so the whole process can be read top to bottom.
 
 ---
 
 ## 1. Repository layout
 
 ```
-├── DSA5208_Project2.ipynb    the complete pipeline, with outputs (sections 0-13, see §3)
+├── DSA5208_Project2.ipynb    the complete pipeline (sections 0-20, see §3)
 ├── environment.yml           conda environment (Python 3.11, PySpark 3.5, Java 17)
-├── DSA5208_Project2_Report.docx  the project report (Word; export to PDF for submission)
+├── DSA5208_Project2_Report.pdf   the project report (submitted); DSA5208_Project2_Report.docx is the editable source
 ├── reference/                Singapore coastline for the Figure 7 map + SOURCES.md (ODbL)
-├── models/task2_exceedance/  trained Spark PipelineModel + metadata.json (the submitted model)
+├── models/task2_final_rf/    FINAL Task 2 model: PipelineModel + calibrator + feature_spec.json (submitted)
+├── models/task2_baseline_lr/ Stage 1 logistic model (interpretable baseline) + metadata.json
 ├── outputs/
-│   ├── figures/              fig01-fig10 (Task 1), fig11-fig15 (Task 2), 300 dpi PNG
-│   │                         + task1_all_figures.pdf, task2_all_figures.pdf
-│   └── tables/               every result table behind the figures and the text (CSV, t00-t40)
+│   ├── figures/              fig01-fig10 (Task 1), fig11-fig15 (Task 2 stage 1), fig16-fig22 (final model), fig23 (scalability)
+│   │                         + task1_all_figures.pdf, task2_all_figures.pdf, task2_final_model_figures.pdf
+│   └── tables/               every result table behind the figures and the text (CSV: t00-t42, t2_*)
 ├── data/                     the eight raw CSVs (not in git, 7.5 GB; see §2)
 └── data_parquet/             Spark data layers written by the notebook (not in git):
     ├── bronze/               typed copy of the raw CSVs, partitioned by year
     ├── silver/               cleaned readings + station table
-    └── gold/                 Task 2 feature table and training / evaluation sets
+    └── gold/                 Task 2 feature tables, training / evaluation sets and 2024 predictions
 ```
 
 No other code is needed: the notebook does not import any project modules. Its only input besides the data is
@@ -49,16 +50,30 @@ No other code is needed: the notebook does not import any project modules. Its o
    ```bash
    jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.timeout=-1 DSA5208_Project2.ipynb
    ```
-   A full run takes about 15–20 minutes on the machine in §4 and writes `data_parquet/`, `outputs/` and `models/`.
-   Optional settings: `SPARK_LOCAL_CORES` (default: all cores) and `SPARK_DRIVER_MEMORY` (default `12g`).
+   A full run from scratch takes about 1 h 30 min on the machine in §4: Sections 0–11 about 10 minutes, the
+   year-blocked cross-validation in Section 14 about 45 minutes with `CV_PARALLELISM=4`, the rest about 30 minutes.
+   Keep the machine awake and plugged in for the whole run (on macOS: `caffeinate -is jupyter nbconvert ...`); a
+   laptop that sleeps mid-run breaks the Spark session. The run writes `data_parquet/`, `outputs/` and `models/`.
+   Optional environment variables:
 
-**Using the trained model without retraining.** Run Section 0, then every cell whose first line is `# definitions`
-(Sections 4, 4.3, 6, 7 and 10), then Section 12. It needs `data_parquet/silver/` (Sections 1 and 3) to rebuild the
-features for the requested time:
+   | Variable | Default | Meaning |
+   |---|---|---|
+   | `SPARK_LOCAL_CORES` | all cores | `local[N]` master |
+   | `SPARK_DRIVER_MEMORY` | `12g` | driver heap (the submitted run used `16g`; 12 g occasionally hits Spark's execution-memory limit in Section 9 with 14 cores) |
+   | `CV_FRACTION` | `0.2` | share of the Stage 2 training sample used for cross-validation (the final refit uses all of it) |
+   | `CV_PARALLELISM` | `2` | models fitted in parallel by `CrossValidator` |
+   | `RERUN_CV` | `1` | `0` reuses `outputs/tables/t2_cv_results.csv` from a previous run instead of repeating the cross-validation |
+
+   Each finished cross-validation grid is also saved to `outputs/tables/_cv_partial/`, so a run that is interrupted
+   during Section 14 resumes with the unfinished grids only; the folder is removed when the cross-validation completes.
+
+**Using the trained model without retraining.** Run Section 0, then every cell whose first line is `# definitions`,
+then the `predict()` cell of Section 18. It loads `models/task2_final_rf/` and needs `data_parquet/silver/`
+(Sections 1 and 3) to rebuild the features for the requested time:
 
 ```python
-predict("S77", "2024-10-01 15:00:00", 5)      # -> {"probability": 0.004, ...}
-predict("S77", "2024-10-01 15:00:00", 5, curve=True)["curve"]   # P(> h) for every h on the grid
+predict("S77", "2024-10-01 15:00:00", 5)["probability"]          # P(> 5 mm in the next 30 min)
+predict("S77", "2024-10-01 15:00:00", 5, curve=True)["curve"]    # P(> h) for h on a grid from 0.2 to 60 mm
 ```
 
 ## 3. What the notebook does
@@ -75,10 +90,17 @@ predict("S77", "2024-10-01 15:00:00", 5, curve=True)["curve"]   # P(> h) for eve
 | | 7. Feature engineering | trailing rain, neighbouring gauges, calendar → **gold** feature table; independent leakage check |
 | | 8. Training / evaluation sets | threshold as an input, label-independent sampling |
 | | 9. Baselines | climatology and base rate |
-| | 10. Candidate models | 4 logistic regressions, 2 gradient-boosted tree classifiers; selection on 2023 |
-| | 11. Final evaluation | selected model vs baselines on the untouched 2024 test year; save model; `fig11`–`fig15` |
-| | 12. Using the model | reload the saved model; `predict(station, time, threshold)` |
-| | 13. Summary | results and stage timings (`t40`) |
+| | 10. Stage 1 models | 4 logistic regressions, 2 gradient-boosted tree classifiers; selection on 2023 |
+| | 11. Stage 1 evaluation | Stage 1 model vs baselines on 2024; saved as the interpretable baseline; `fig11`–`fig15` |
+| | 12. Stage 2 features | richer features → **gold**; independent leakage check |
+| | 13. Feature selection | correlation, MLlib `ANOVATest`, selector size tuned in cross-validation (`fig16`) |
+| | 14. Cross-validation | year-blocked 4-fold CV + tuning of LR, random forest, GBT; lowest CV log loss = final model (`fig17`) |
+| | 15. Ablation, calibration | feature-group ablation (`fig18`); calibrator kept only if it helps on held-out 2023 data |
+| | 16. Final evaluation | final model vs baselines on every 2024 row (`fig19`–`fig21`) |
+| | 17. Head-to-head | final model vs Stage 1 model on identical 2024 rows (`t41`, `fig22`) |
+| | 18. Using the model | save the final model; `predict(station, time, threshold)` |
+| | 19. Summary | results and stage timings (`t40`) |
+| | 20. Scalability | the cleaning job in fresh Spark sessions with 2, 4, 8 and 16 cores: wall time and speed-up (`t42`, `fig23`) |
 
 ### Data cleaning (Section 3)
 
@@ -107,12 +129,12 @@ Single-node Spark in local mode (the same code runs on a cluster by changing the
 |---|---|
 | Machine | Apple MacBook Pro, Apple M4 Max, macOS 26.6.2 |
 | CPU / RAM | 16 cores (12 performance + 4 efficiency), 128 GB |
-| Spark | 3.5.5, `local[14]`, driver heap 12 g, 96 shuffle partitions (64 for model training) |
+| Spark | 3.5.5, `local[14]`, driver heap 16 g, 96 shuffle partitions (64 for model training) |
 | Software | Python 3.11.17, OpenJDK 17.0.18, pandas 3.0.6, NumPy 1.26.4, Matplotlib 3.11.2 |
 | Time zone | `Asia/Singapore` for every timestamp |
 | Storage | Snappy-compressed Parquet, partitioned by year |
 
-The pipeline was developed on a second Apple Silicon Mac (24 GB RAM) with the same 12 g driver heap, so it does not
+The pipeline was developed on a second Apple Silicon Mac (24 GB RAM) with a 12 g driver heap, so it does not
 need the larger machine. The notebook records the environment in `t00_environment.csv` and the time of every stage in
 `t40_stage_timings.csv`.
 
@@ -135,40 +157,72 @@ need the larger machine. The notebook records the environment in `t00_environmen
 
 ### Task 2: P(next-30-minute rain > *h*)
 
-One Spark MLlib logistic-regression pipeline with the threshold as an input (selected on 2023 by log loss from four
-logistic regressions and two gradient-boosted tree classifiers). Untouched 2024 test year, cut-offs fixed on 2023:
+The threshold is an input of a single classifier, so one model answers for any station, time and threshold. Task 2
+has two stages:
 
-| *h* (mm) | event rate | PR-AUC | ROC-AUC | Brier | log loss | precision | recall | F1 |
-|---|---|---|---|---|---|---|---|---|
-| 0.2 | 4.89 % | 0.638 | 0.910 | 0.0276 | 0.1124 | 0.672 | 0.562 | 0.612 |
-| 1 | 2.59 % | 0.585 | 0.918 | 0.0152 | 0.0661 | 0.648 | 0.539 | 0.588 |
-| 2 | 1.70 % | 0.524 | 0.915 | 0.0109 | 0.0489 | 0.577 | 0.511 | 0.542 |
-| 5 | 0.83 % | 0.418 | 0.912 | 0.0061 | 0.0287 | 0.497 | 0.441 | 0.467 |
-| 10 | 0.38 % | 0.327 | 0.917 | 0.0030 | 0.0150 | 0.363 | 0.435 | 0.395 |
-| 20 | 0.11 % | 0.186 | 0.941 | 0.0009 | 0.0050 | 0.243 | 0.320 | 0.276 |
+* **Stage 1 (Sections 7–11): an interpretable baseline.** A Spark MLlib logistic regression on the station's own
+  recent rain and its four nearest gauges, with threshold × rain interactions, selected on 2023. On 2024 it reaches
+  macro PR-AUC 0.446 and ROC-AUC 0.919 (climatology 0.034 and 0.690), is well calibrated from 1 mm upwards and is
+  monotone in the threshold by construction. Per threshold (cut-offs fixed on 2023):
 
-| Model (2024, macro average over thresholds) | PR-AUC | ROC-AUC | log-loss skill vs climatology |
-|---|---|---|---|
-| Base rate per threshold | 0.017 | 0.500 | −0.04 |
-| Climatology (season × hour × threshold) | 0.034 | 0.690 | 0 |
-| **Logistic regression + neighbours + interactions (selected)** | **0.446** | **0.919** | **0.392** |
-| Gradient-boosted trees, depth 7 | 0.446 | 0.923 | 0.019 |
+  | *h* (mm) | event rate | PR-AUC | ROC-AUC | Brier | log loss | precision | recall | F1 |
+  |---|---|---|---|---|---|---|---|---|
+  | 0.2 | 4.89 % | 0.638 | 0.910 | 0.0276 | 0.1124 | 0.672 | 0.562 | 0.612 |
+  | 1 | 2.59 % | 0.585 | 0.918 | 0.0152 | 0.0661 | 0.648 | 0.539 | 0.588 |
+  | 2 | 1.70 % | 0.524 | 0.915 | 0.0109 | 0.0489 | 0.577 | 0.511 | 0.542 |
+  | 5 | 0.83 % | 0.418 | 0.912 | 0.0061 | 0.0287 | 0.497 | 0.441 | 0.467 |
+  | 10 | 0.38 % | 0.327 | 0.917 | 0.0030 | 0.0150 | 0.363 | 0.435 | 0.395 |
+  | 20 | 0.11 % | 0.186 | 0.941 | 0.0009 | 0.0050 | 0.243 | 0.320 | 0.276 |
 
-The selected model is well calibrated from 1 mm upwards and its probability always falls as the threshold rises (0
-violations in 25.8 M threshold pairs). The GBT ranks about as well (equal PR-AUC, higher ROC-AUC) but its probabilities are badly calibrated
-(Spark's GBT starts every prediction at 0.5, so 80 trees cannot reach 0.1 % probabilities). Limitations: one test
-year, thin data above 20 mm, no radar or satellite inputs, and the GBT compared without recalibration.
+* **Stage 2 (Sections 12–17): the final model.** Richer features (minutes since the last rain, storm trend, three
+  neighbour rings including gauges 5–20 km to the west, island-wide wet share, rain so far today), feature selection
+  inside the pipeline, and **4-fold year-blocked cross-validation** with hyper-parameter grids over logistic
+  regression, random forest and gradient-boosted trees (25 settings). The model with the lowest cross-validated log
+  loss is refitted on 2017–2023, calibrated if a held-out check on 2023 says it helps, and tested once on every 2024
+  row. Section 17 scores it and the Stage 1 model on **identical** 2024 rows (`t41_task2_head_to_head.csv`).
+
+  **Result.** The **random forest** (100 trees, depth 12, all 33 candidate features) has the lowest cross-validated
+  log loss (0.0322 ± 0.0019, against 0.0394 for logistic regression and 0.0405 for GBT; `t2_cv_results.csv`), and a
+  Platt calibrator was kept after the held-out 2023 check. On every 2024 row (`t2_test_metrics.csv`):
+
+  | *h* (mm) | event rate | PR-AUC | ROC-AUC | Brier | log loss | Brier skill | precision | recall | F1 |
+  |---|---|---|---|---|---|---|---|---|---|
+  | 0.5 | 3.63 % | 0.721 | 0.965 | 0.0174 | 0.0645 | 0.492 | 0.719 | 0.588 | 0.647 |
+  | 1 | 2.57 % | 0.667 | 0.967 | 0.0136 | 0.0515 | 0.449 | 0.650 | 0.579 | 0.612 |
+  | 2 | 1.69 % | 0.587 | 0.966 | 0.0101 | 0.0396 | 0.385 | 0.581 | 0.528 | 0.553 |
+  | 5 | 0.84 % | 0.465 | 0.968 | 0.0058 | 0.0239 | 0.294 | 0.490 | 0.457 | 0.473 |
+  | 10 | 0.38 % | 0.350 | 0.973 | 0.0030 | 0.0129 | 0.213 | 0.399 | 0.397 | 0.398 |
+  | 20 | 0.10 % | 0.182 | 0.981 | 0.0009 | 0.0045 | 0.100 | 0.275 | 0.280 | 0.278 |
+
+  On identical Stage 1 rows (1,255,003 per threshold, labels matched exactly) the random forest beats the Stage 1
+  logistic model on PR-AUC, ROC-AUC and log loss at all five common thresholds (at 5 mm: PR-AUC 0.459 vs 0.418,
+  ROC-AUC 0.970 vs 0.912); the PR-AUC gain shrinks as the threshold rises (0.08 at 1 mm, 0.006 at 20 mm). Spark's
+  tree models are not bit-for-bit deterministic across runs, so these numbers move in the third decimal.
+
+* **Scalability (Section 20).** The cleaning job (read 48.5 M bronze rows, snap, de-duplicate, aggregate to
+  station-days) runs in 26 s on 2 cores and 6 s on 16 (speed-up 4.6×, parallel efficiency
+  57 %): the two shuffles and the single SSD limit the gain at high core counts (`t42_scaling.csv`, `fig23`).
+
+**Leakage checks.** Both stages are verified by an independent pandas recomputation: targets and features of random
+rows are recomputed from data truncated at the prediction time and must match the Spark values exactly
+(Sections 7.1 and 12.2). Neighbour denominators in Stage 2 count only gauges that have reported by the prediction
+time.
+
+**Limitations.** One test year; thin data above 20 mm; no radar or satellite inputs; local-mode Spark only; the GBT
+in Stage 1 is uncalibrated (Stage 2 calibrates its candidates).
 
 ## 6. Provenance and AI usage
 
 The team built two pipelines: a script pipeline (this repository) and a notebook pipeline (branch
-`vanshika/task1-task2`). The script pipeline's Task 2 model was the only one trained on the full data, so it was
-selected; its gauge-fault QC rules and trend tests were taken from the notebook pipeline. The final code was then
-consolidated into the single notebook above, replacing the earlier `src/*.py` scripts and `run_task*.sh` wrappers
-(still available in the git history).
+`vanshika/task1-task2`). Both are merged here: the script pipeline provides the data engineering, the Task 1 analysis
+and the Stage 1 model; the notebook pipeline provides the gauge-fault QC rules, the trend tests and the Stage 2 final
+model (richer features, year-blocked cross-validation, calibration). Changes made while merging Stage 2: it reads
+this notebook's silver layer; neighbour denominators no longer count gauges that report only after the prediction
+time; the ANOVA ranking uses Spark MLlib's `ANOVATest`; an independent leakage check and an in-notebook head-to-head
+comparison were added. The earlier `src/*.py` scripts and `run_task*.sh` wrappers are in the git history.
 
 Claude (Anthropic) was used as a coding assistant for the Spark pipeline, figure code and this README; for Task 2 for
 code, debugging, modelling design (target construction, leakage checks, threshold-training strategy, evaluation) and
-documentation; and to review and compare the two pipelines, port the QC rules and trend tests, and consolidate the
-code into the notebook. All analytical decisions were reviewed against the data, and every number reported here is
+documentation; and to review and compare the two pipelines, port the QC rules, trend tests and the Stage 2 model,
+and consolidate the code into the notebook. All analytical decisions were reviewed against the data, and every number reported here is
 produced by the notebook.

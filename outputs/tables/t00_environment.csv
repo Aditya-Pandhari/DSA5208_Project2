@@ -8,7 +8,7 @@ Java,"openjdk version ""17.0.18"" 2026-01-20 LTS"
 Spark,3.5.5
 Spark master,local[14]
 default parallelism,14
-driver memory,12g
+driver memory,16g
 shuffle partitions,96
 session time zone,Asia/Singapore
 pandas / NumPy / Matplotlib,3.0.6 / 1.26.4 / 3.11.2
