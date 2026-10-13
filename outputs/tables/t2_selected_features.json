@@ -24,16 +24,16 @@
   "island_wetfrac",
   "island_mean_r30",
   "rain_today",
-  "season_idx",
-  "lon",
   "has_west",
-  "doy_sin",
-  "n_obs_180",
-  "n_obs_60",
-  "min_since_rain",
-  "lat",
+  "lon",
+  "season_idx",
   "has_inner",
-  "has_outer"
+  "n_obs_180",
+  "doy_sin",
+  "lat",
+  "has_outer",
+  "n_obs_60",
+  "min_since_rain"
  ],
  "dropped": []
 }

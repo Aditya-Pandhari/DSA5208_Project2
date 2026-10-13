@@ -19,12 +19,13 @@ Once executed it keeps the output of every cell, so the whole process can be rea
 ├── environment.yml           conda environment (Python 3.11, PySpark 3.5, Java 17)
 ├── DSA5208_Project2_Report.pdf   the project report (submitted); DSA5208_Project2_Report.docx is the editable source
 ├── reference/                Singapore coastline for the Figure 7 map + SOURCES.md (ODbL)
+├── cloud/                    Dataproc scalability benchmark: dataproc_benchmark.py + run_dataproc.sh (gcloud commands)
 ├── models/task2_final_rf/    FINAL Task 2 model: PipelineModel + calibrator + feature_spec.json (submitted)
 ├── models/task2_baseline_lr/ Stage 1 logistic model (interpretable baseline) + metadata.json
 ├── outputs/
-│   ├── figures/              fig01-fig10 (Task 1), fig11-fig15 (Task 2 stage 1), fig16-fig22 (final model), fig23 (scalability)
+│   ├── figures/              fig01-fig10 (Task 1), fig11-fig15 (Task 2 stage 1), fig16-fig22 (final model), fig23-fig24 (scalability)
 │   │                         + task1_all_figures.pdf, task2_all_figures.pdf, task2_final_model_figures.pdf
-│   └── tables/               every result table behind the figures and the text (CSV: t00-t42, t2_*)
+│   └── tables/               every result table behind the figures and the text (CSV: t00-t44, t2_*); cloud/ = Dataproc timings
 ├── data/                     the eight raw CSVs (not in git, 7.5 GB; see §2)
 └── data_parquet/             Spark data layers written by the notebook (not in git):
     ├── bronze/               typed copy of the raw CSVs, partitioned by year
@@ -51,7 +52,7 @@ No other code is needed: the notebook does not import any project modules. Its o
    jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.timeout=-1 DSA5208_Project2.ipynb
    ```
    A full run from scratch takes about 1 h 30 min on the machine in §4: Sections 0–11 about 10 minutes, the
-   year-blocked cross-validation in Section 14 about 45 minutes with `CV_PARALLELISM=4`, the rest about 30 minutes.
+   year-blocked cross-validation in Section 14 about 35–45 minutes with `CV_PARALLELISM=4`, the rest about 30 minutes.
    Keep the machine awake and plugged in for the whole run (on macOS: `caffeinate -is jupyter nbconvert ...`); a
    laptop that sleeps mid-run breaks the Spark session. The run writes `data_parquet/`, `outputs/` and `models/`.
    Optional environment variables:
@@ -75,6 +76,13 @@ then the `predict()` cell of Section 18. It loads `models/task2_final_rf/` and n
 predict("S77", "2024-10-01 15:00:00", 5)["probability"]          # P(> 5 mm in the next 30 min)
 predict("S77", "2024-10-01 15:00:00", 5, curve=True)["curve"]    # P(> h) for h on a grid from 0.2 to 60 mm
 ```
+
+**Running the cloud benchmark (optional).** `cloud/run_dataproc.sh` lists the `gcloud` commands, block by block:
+create a bucket in `asia-southeast1`, upload the eight CSVs and `cloud/dataproc_benchmark.py`, create a Dataproc 2.2
+cluster (master and 2 workers `n2-standard-2`, auto-deleted after 30 idle minutes), submit the job, scale to 4 workers,
+submit again with `--skip-ingest`, and delete the cluster. The whole experiment costs about US$2. The timings used in
+the report are in `outputs/tables/cloud/t43_cloud_scaling.csv` with their Dataproc job IDs; Section 20 of the notebook
+reads that file to draw the comparison.
 
 ## 3. What the notebook does
 
@@ -100,7 +108,7 @@ predict("S77", "2024-10-01 15:00:00", 5, curve=True)["curve"]    # P(> h) for h 
 | | 17. Head-to-head | final model vs Stage 1 model on identical 2024 rows (`t41`, `fig22`) |
 | | 18. Using the model | save the final model; `predict(station, time, threshold)` |
 | | 19. Summary | results and stage timings (`t40`) |
-| | 20. Scalability | the cleaning job in fresh Spark sessions with 2, 4, 8 and 16 cores: wall time and speed-up (`t42`, `fig23`) |
+| | 20. Scalability | the cleaning job in fresh Spark sessions with 2, 4, 8 and 16 cores (`t42`, `fig23`); laptop vs Dataproc cluster (`t44`, `fig24`) |
 
 ### Data cleaning (Section 3)
 
@@ -182,26 +190,35 @@ has two stages:
   row. Section 17 scores it and the Stage 1 model on **identical** 2024 rows (`t41_task2_head_to_head.csv`).
 
   **Result.** The **random forest** (100 trees, depth 12, all 33 candidate features) has the lowest cross-validated
-  log loss (0.0322 ± 0.0019, against 0.0394 for logistic regression and 0.0405 for GBT; `t2_cv_results.csv`), and a
+  log loss (0.0320 ± 0.0018, against 0.0392 for logistic regression and 0.0404 for GBT; `t2_cv_results.csv`), and a
   Platt calibrator was kept after the held-out 2023 check. On every 2024 row (`t2_test_metrics.csv`):
 
   | *h* (mm) | event rate | PR-AUC | ROC-AUC | Brier | log loss | Brier skill | precision | recall | F1 |
   |---|---|---|---|---|---|---|---|---|---|
-  | 0.5 | 3.63 % | 0.721 | 0.965 | 0.0174 | 0.0645 | 0.492 | 0.719 | 0.588 | 0.647 |
-  | 1 | 2.57 % | 0.667 | 0.967 | 0.0136 | 0.0515 | 0.449 | 0.650 | 0.579 | 0.612 |
-  | 2 | 1.69 % | 0.587 | 0.966 | 0.0101 | 0.0396 | 0.385 | 0.581 | 0.528 | 0.553 |
-  | 5 | 0.84 % | 0.465 | 0.968 | 0.0058 | 0.0239 | 0.294 | 0.490 | 0.457 | 0.473 |
-  | 10 | 0.38 % | 0.350 | 0.973 | 0.0030 | 0.0129 | 0.213 | 0.399 | 0.397 | 0.398 |
-  | 20 | 0.10 % | 0.182 | 0.981 | 0.0009 | 0.0045 | 0.100 | 0.275 | 0.280 | 0.278 |
+  | 0.5 | 3.63 % | 0.721 | 0.964 | 0.0174 | 0.0645 | 0.492 | 0.712 | 0.592 | 0.647 |
+  | 1 | 2.57 % | 0.667 | 0.965 | 0.0137 | 0.0516 | 0.448 | 0.647 | 0.583 | 0.613 |
+  | 2 | 1.69 % | 0.585 | 0.965 | 0.0102 | 0.0397 | 0.383 | 0.589 | 0.521 | 0.553 |
+  | 5 | 0.84 % | 0.466 | 0.969 | 0.0058 | 0.0239 | 0.295 | 0.486 | 0.460 | 0.473 |
+  | 10 | 0.38 % | 0.349 | 0.973 | 0.0030 | 0.0129 | 0.212 | 0.409 | 0.388 | 0.398 |
+  | 20 | 0.10 % | 0.186 | 0.981 | 0.0009 | 0.0046 | 0.098 | 0.277 | 0.280 | 0.278 |
 
   On identical Stage 1 rows (1,255,003 per threshold, labels matched exactly) the random forest beats the Stage 1
-  logistic model on PR-AUC, ROC-AUC and log loss at all five common thresholds (at 5 mm: PR-AUC 0.459 vs 0.418,
-  ROC-AUC 0.970 vs 0.912); the PR-AUC gain shrinks as the threshold rises (0.08 at 1 mm, 0.006 at 20 mm). Spark's
+  logistic model on PR-AUC, ROC-AUC and log loss at all five common thresholds (at 5 mm: PR-AUC 0.461 vs 0.418,
+  ROC-AUC 0.970 vs 0.912); the PR-AUC gain shrinks as the threshold rises (0.08 at 1 mm, 0.005 at 20 mm). Spark's
   tree models are not bit-for-bit deterministic across runs, so these numbers move in the third decimal.
 
 * **Scalability (Section 20).** The cleaning job (read 48.5 M bronze rows, snap, de-duplicate, aggregate to
-  station-days) runs in 26 s on 2 cores and 6 s on 16 (speed-up 4.6×, parallel efficiency
-  57 %): the two shuffles and the single SSD limit the gain at high core counts (`t42_scaling.csv`, `fig23`).
+  station-days) was timed on the laptop with 2, 4, 8 and 16 cores and on a Google Cloud Dataproc cluster with 2 and 4
+  workers (`n2-standard-2`, data in Cloud Storage); both platforms return the same answer.
+
+  | Platform | Configuration | Cores | Wall time (s) | Speed-up | Efficiency |
+  |---|---|---|---|---|---|
+  | Laptop | `local[2]` / `[4]` / `[8]` / `[16]` | 2 / 4 / 8 / 16 | 26.3 / 13.4 / 8.0 / 5.9 | 1.00 / 1.96 / 3.29 / 4.46× | 100 / 98 / 82 / 56 % |
+  | Dataproc | 2 / 4 workers × `n2-standard-2` | 4 / 8 | 74.8 / 37.3 | 1.00 / 2.01× | 100 / 100 % |
+
+  The laptop is faster in absolute terms (fast cores, 128 GB, local SSD), but adding cores to one machine shares one
+  memory bus and one disk, so its efficiency falls; adding workers adds CPU, memory and disk together, so doubling the
+  cluster halved the time. The cluster was limited to 4 workers by the education project's 12-vCPU quota.
 
 **Leakage checks.** Both stages are verified by an independent pandas recomputation: targets and features of random
 rows are recomputed from data truncated at the prediction time and must match the Spark values exactly

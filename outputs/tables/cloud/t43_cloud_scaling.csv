@@ -1,0 +1,8 @@
+cluster,workers,worker_vcpus,machine_type,disk,image,job,run,seconds,result,dataproc_job_id
+dsa5208-rain,2,4,n2-standard-2 (2 vCPU / 8 GB),pd-standard 50 GB,2.2-debian12 (Spark 3.5),ingest (CSV -> bronze Parquet),1,328.2,48538713,74da288cc0b342468c54995194c14e98
+dsa5208-rain,2,4,n2-standard-2 (2 vCPU / 8 GB),pd-standard 50 GB,2.2-debian12 (Spark 3.5),clean (bronze -> dedup -> station-days),1,73.4,1195661.7354899922,74da288cc0b342468c54995194c14e98
+dsa5208-rain,2,4,n2-standard-2 (2 vCPU / 8 GB),pd-standard 50 GB,2.2-debian12 (Spark 3.5),clean (bronze -> dedup -> station-days),2,74.9,1195661.735489992,74da288cc0b342468c54995194c14e98
+dsa5208-rain,2,4,n2-standard-2 (2 vCPU / 8 GB),pd-standard 50 GB,2.2-debian12 (Spark 3.5),clean (bronze -> dedup -> station-days),3,76.1,1195661.735489992,74da288cc0b342468c54995194c14e98
+dsa5208-rain,4,8,n2-standard-2 (2 vCPU / 8 GB),pd-standard 50 GB,2.2-debian12 (Spark 3.5),clean (bronze -> dedup -> station-days),1,43.7,1195661.7354899922,09383695ef7c4a2ba4a29bef8198d8c2
+dsa5208-rain,4,8,n2-standard-2 (2 vCPU / 8 GB),pd-standard 50 GB,2.2-debian12 (Spark 3.5),clean (bronze -> dedup -> station-days),2,34.3,1195661.735489992,09383695ef7c4a2ba4a29bef8198d8c2
+dsa5208-rain,4,8,n2-standard-2 (2 vCPU / 8 GB),pd-standard 50 GB,2.2-debian12 (Spark 3.5),clean (bronze -> dedup -> station-days),3,33.9,1195661.735489992,09383695ef7c4a2ba4a29bef8198d8c2
