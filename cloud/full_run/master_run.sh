@@ -28,10 +28,12 @@ export PYTHONPATH=$SPARK_HOME/python:$(ls $SPARK_HOME/python/lib/py4j-*-src.zip)
 export PYSPARK_PYTHON=/opt/conda/default/bin/python      # exists on every node; same Python minor version as the venv
 export SPARK_MASTER=yarn SPARK_DRIVER_MEMORY=16g CV_PARALLELISM=4 RERUN_CV=1 CLUSTER_DESC="$CLUSTER_DESC"
 stamp "execute the notebook on YARN (log: $LOG)"
-/usr/bin/time -p /tmp/dsa-venv/bin/jupyter nbconvert --to notebook --execute --inplace \
+T0=$(date +%s)
+/tmp/dsa-venv/bin/jupyter nbconvert --to notebook --execute --inplace \
   --ExecutePreprocessor.timeout=-1 --ExecutePreprocessor.kernel_name=dsa5208 DSA5208_Project2_dataproc.ipynb > $LOG 2>&1
 echo "exit $?" >> $LOG
-stamp "notebook finished: $(tail -1 $LOG)"
+echo "real $(( $(date +%s) - T0 ))" >> $LOG
+stamp "notebook finished: $(tail -2 $LOG | tr '\n' ' ')"
 
 stamp "collect results: outputs/, models (metadata locally, Spark models from HDFS), notebook, logs"
 mkdir -p results && cp -r DSA5208_Project2_dataproc.ipynb outputs run.log progress.log results/ 2>/dev/null
