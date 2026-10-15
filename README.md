@@ -27,7 +27,7 @@ Once executed it keeps the output of every cell, so the whole process can be rea
 ├── outputs/
 │   ├── figures/              fig01-fig10 (Task 1), fig11-fig15 (Task 2 stage 1), fig16-fig22 (final model), fig23-fig24 (scalability)
 │   │                         + task1_all_figures.pdf, task2_all_figures.pdf, task2_final_model_figures.pdf
-│   └── tables/               every result table behind the figures and the text (CSV: t00-t44, t2_*); cloud/ = Dataproc timings
+│   └── tables/               every result table behind the figures and the text (CSV: t00-t47, t2_*; t46 = Spark physical plans); cloud/ = Dataproc timings
 ├── data/                     the eight raw CSVs (not in git, 7.5 GB; see §2)
 └── data_parquet/             Spark data layers written by the notebook (not in git):
     ├── bronze/               typed copy of the raw CSVs, partitioned by year
@@ -80,7 +80,7 @@ predict("S77", "2024-10-01 15:00:00", 5, curve=True)["curve"]    # P(> h) for h 
 ```
 
 **Running the complete notebook on Dataproc (optional, ~5 h, ~US$5).** `python cloud/make_dataproc_notebook.py`
-writes the cluster copy of the notebook; upload it, `cloud/master_run.sh` and the coastline file to `gs://<bucket>/code/full_run/`
+writes the cluster copy of the notebook (`cloud/DSA5208_Project2_dataproc.ipynb`); upload it, `cloud/master_run.sh` and the coastline file to `gs://<bucket>/code/full_run/`
 and follow `cloud/run_full_pipeline_dataproc.sh` in Cloud Shell. The cluster needs Cloud NAT to install the Python
 packages (its nodes have no public IP).
 
@@ -107,7 +107,7 @@ reads that file to draw the comparison.
 | | 9. Baselines | climatology and base rate |
 | | 10. Stage 1 models | 4 logistic regressions, 2 gradient-boosted tree classifiers; selection on 2023 |
 | | 11. Stage 1 evaluation | Stage 1 model vs baselines on 2024; saved as the interpretable baseline; `fig11`–`fig15` |
-| | 12. Stage 2 features | richer features → **gold**; independent leakage check |
+| | 12. Stage 2 features | richer features → **gold**; independent leakage check; 12.4: the physical plans Spark chose (broadcast hash join vs sort-merge join) and adaptive query execution (`t46`) |
 | | 13. Feature selection | correlation, MLlib `ANOVATest`, selector size tuned in cross-validation (`fig16`) |
 | | 14. Cross-validation | year-blocked 4-fold CV + tuning of LR, random forest, GBT; lowest CV log loss = final model (`fig17`) |
 | | 15. Ablation, calibration | feature-group ablation (`fig18`); calibrator kept only if it helps on held-out 2023 data |
@@ -115,7 +115,7 @@ reads that file to draw the comparison.
 | | 17. Head-to-head | final model vs Stage 1 model on identical 2024 rows (`t41`, `fig22`) |
 | | 18. Using the model | save the final model; `predict(station, time, threshold)` |
 | | 19. Summary | results and stage timings (`t40`) |
-| | 20. Scalability | the cleaning job in fresh Spark sessions with 2, 4, 8 and 16 cores (`t42`, `fig23`); laptop vs Dataproc cluster (`t44`, `fig24`) |
+| | 20. Scalability | strong scaling (8 years on 2–16 cores) with an Amdahl's-law fit, weak scaling (years grow with the cores) (`t42`, `t45`, `t47`, `fig23`); laptop vs Dataproc cluster (`t44`, `fig24`) |
 
 ### Data cleaning (Section 3)
 
@@ -197,22 +197,21 @@ has two stages:
   row. Section 17 scores it and the Stage 1 model on **identical** 2024 rows (`t41_task2_head_to_head.csv`).
 
   **Result.** The **random forest** (100 trees, depth 12, all 33 candidate features) has the lowest cross-validated
-  log loss (0.0320 ± 0.0018, against 0.0392 for logistic regression and 0.0404 for GBT; `t2_cv_results.csv`), and a
+  log loss (0.0320 ± 0.0016, against 0.0392 for logistic regression and 0.0404 for GBT; `t2_cv_results.csv`), and a
   Platt calibrator was kept after the held-out 2023 check. On every 2024 row (`t2_test_metrics.csv`):
 
   | *h* (mm) | event rate | PR-AUC | ROC-AUC | Brier | log loss | Brier skill | precision | recall | F1 |
   |---|---|---|---|---|---|---|---|---|---|
-  | 0.5 | 3.63 % | 0.721 | 0.964 | 0.0174 | 0.0645 | 0.492 | 0.712 | 0.592 | 0.647 |
-  | 1 | 2.57 % | 0.667 | 0.965 | 0.0137 | 0.0516 | 0.448 | 0.647 | 0.583 | 0.613 |
-  | 2 | 1.69 % | 0.585 | 0.965 | 0.0102 | 0.0397 | 0.383 | 0.589 | 0.521 | 0.553 |
-  | 5 | 0.84 % | 0.466 | 0.969 | 0.0058 | 0.0239 | 0.295 | 0.486 | 0.460 | 0.473 |
-  | 10 | 0.38 % | 0.349 | 0.973 | 0.0030 | 0.0129 | 0.212 | 0.409 | 0.388 | 0.398 |
-  | 20 | 0.10 % | 0.186 | 0.981 | 0.0009 | 0.0046 | 0.098 | 0.277 | 0.280 | 0.278 |
+  | 0.5 | 3.63 % | 0.721 | 0.964 | 0.0174 | 0.0645 | 0.492 | 0.721 | 0.584 | 0.645 |
+  | 1 | 2.57 % | 0.666 | 0.965 | 0.0136 | 0.0515 | 0.450 | 0.662 | 0.569 | 0.612 |
+  | 2 | 1.69 % | 0.586 | 0.965 | 0.0102 | 0.0397 | 0.383 | 0.593 | 0.518 | 0.553 |
+  | 5 | 0.84 % | 0.466 | 0.968 | 0.0058 | 0.0239 | 0.294 | 0.499 | 0.451 | 0.474 |
+  | 10 | 0.38 % | 0.349 | 0.975 | 0.0030 | 0.0129 | 0.213 | 0.398 | 0.394 | 0.396 |
+  | 20 | 0.10 % | 0.185 | 0.981 | 0.0009 | 0.0046 | 0.095 | 0.285 | 0.259 | 0.271 |
 
   On identical Stage 1 rows (1,255,003 per threshold, labels matched exactly) the random forest beats the Stage 1
-  logistic model on PR-AUC, ROC-AUC and log loss at all five common thresholds (at 5 mm: PR-AUC 0.461 vs 0.418,
-  ROC-AUC 0.970 vs 0.912); the PR-AUC gain shrinks as the threshold rises (0.08 at 1 mm, 0.005 at 20 mm). Spark's
-  tree models are not bit-for-bit deterministic across runs, so these numbers move in the third decimal.
+  logistic model on ROC-AUC and log loss at all five common thresholds and on PR-AUC at 4 of 5; the PR-AUCs are practically tied at 20 mm (0.1856 vs 0.1858) (at 5 mm: PR-AUC 0.462 vs 0.418, ROC-AUC 0.970 vs 0.912). Spark's tree models are not
+  bit-for-bit deterministic across runs, so these numbers move in the third decimal.
 
 * **Scalability (Section 20).** The cleaning job (read 48.5 M bronze rows, snap, de-duplicate, aggregate to
   station-days) was timed on the laptop with 2, 4, 8 and 16 cores and on a Google Cloud Dataproc cluster with 2 and 4
@@ -220,8 +219,13 @@ has two stages:
 
   | Platform | Configuration | Cores | Wall time (s) | Speed-up | Efficiency |
   |---|---|---|---|---|---|
-  | Laptop | `local[2]` / `[4]` / `[8]` / `[16]` | 2 / 4 / 8 / 16 | 26.3 / 13.4 / 8.0 / 5.9 | 1.00 / 1.96 / 3.29 / 4.46× | 100 / 98 / 82 / 56 % |
+  | Laptop | `local[2]` / `[4]` / `[8]` / `[16]` | 2 / 4 / 8 / 16 | 26.3 / 13.5 / 8.1 / 5.9 | 1.00 / 1.95 / 3.25 / 4.46× | 100 / 97 / 81 / 56 % |
   | Dataproc | 2 / 4 workers × `n2-standard-2` | 4 / 8 | 74.8 / 37.3 | 1.00 / 2.01× | 100 / 100 % |
+
+  **Strong scaling and Amdahl's law:** fitting T(n) = a + b/n to the laptop's median times gives T(n) = 2.40 + 47.2/n s, a
+  serial share of 4.8 %, so no number of cores could make this job more than 21× faster than one core. **Weak scaling**
+  (1 year on 2 cores up to 8 years on 16, `t45_weak_scaling.csv`): the data grows 9.2× while the time rises from 3.3 s to
+  5.8 s, a scaled speed-up of 5.3× on 16 cores (ideal 8×, efficiency 66 %; Gustafson's law).
 
   The laptop is faster in absolute terms (fast cores, 128 GB, local SSD), but adding cores to one machine shares one
   memory bus and one disk, so its efficiency falls; adding workers adds CPU, memory and disk together, so doubling the

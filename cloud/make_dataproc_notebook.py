@@ -1,6 +1,6 @@
 """Generate the Dataproc copy of the notebook from the submitted one.
 
-    python cloud/make_dataproc_notebook.py        # writes cloud/full_run/DSA5208_Project2_dataproc.ipynb
+    python cloud/make_dataproc_notebook.py        # writes cloud/DSA5208_Project2_dataproc.ipynb (upload it to gs://<bucket>/code/full_run/)
 
 The analysis code is unchanged; only what a cluster needs differently is changed:
   * Spark master: YARN (env SPARK_MASTER, default "yarn") instead of local[*]; no loopback driver binding.
@@ -15,7 +15,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 SRC = REPO / "DSA5208_Project2.ipynb"
-OUT = REPO / "cloud" / "full_run" / "DSA5208_Project2_dataproc.ipynb"
+OUT = REPO / "cloud" / "DSA5208_Project2_dataproc.ipynb"          # cloud/full_run/ holds the executed copy; never overwrite it
 
 nb = json.loads(SRC.read_text())
 cells = nb["cells"]

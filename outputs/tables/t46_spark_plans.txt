@@ -1,0 +1,53 @@
+===== small x large, F.broadcast hint (neighbour rings)
+AdaptiveSparkPlan isFinalPlan=false
++- Project [nb_id#169637, slot_epoch#164620L, r30#164624, station_id#164706, inner#164708L, outer#164709L, west#164710L]
+   +- BroadcastHashJoin [nb_id#169637], [nb_id#164707], Inner, BuildRight, false
+      :- Project [station_id#164612 AS nb_id#169637, slot_epoch#164620L, r30#164624]
+      :  +- Filter ((isnotnull(r30#164624) AND (r30#164624 > 0.0)) AND isnotnull(station_id#164612))
+      :     +- FileScan parquet [station_id#164612,slot_epoch#164620L,r30#164624,year#164637] Batched: true, DataFilters: [isnotnull(r30#164624), (r30#164624 > 0.0), isnotnull(station_id#164612)], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/prateekbansal/Apurwa/Study/NUS_MS/DSA5208-Sclable_Distribu..., PartitionFilters: [], PushedFilters: [IsNotNull(r30), GreaterThan(r30,0.0), IsNotNull(station_id)], ReadSchema: struct<station_id:string,slot_epoch:bigint,r30:double>
+      +- BroadcastExchange HashedRelationBroadcastMode(List(input[1, string, true]),false), [plan_id=21368]
+         +- LocalTableScan [station_id#164706, nb_id#164707, inner#164708L, outer#164709L, west#164710L]
+
+
+===== small x large, no hint (Spark decides)
+AdaptiveSparkPlan isFinalPlan=false
++- Project [nb_id#169637, slot_epoch#164620L, r30#164624, station_id#169641, inner#169643L, outer#169644L, west#169645L]
+   +- BroadcastHashJoin [nb_id#169637], [nb_id#169642], Inner, BuildRight, false
+      :- Project [station_id#164612 AS nb_id#169637, slot_epoch#164620L, r30#164624]
+      :  +- Filter ((isnotnull(r30#164624) AND (r30#164624 > 0.0)) AND isnotnull(station_id#164612))
+      :     +- FileScan parquet [station_id#164612,slot_epoch#164620L,r30#164624,year#164637] Batched: true, DataFilters: [isnotnull(r30#164624), (r30#164624 > 0.0), isnotnull(station_id#164612)], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/prateekbansal/Apurwa/Study/NUS_MS/DSA5208-Sclable_Distribu..., PartitionFilters: [], PushedFilters: [IsNotNull(r30), GreaterThan(r30,0.0), IsNotNull(station_id)], ReadSchema: struct<station_id:string,slot_epoch:bigint,r30:double>
+      +- BroadcastExchange HashedRelationBroadcastMode(List(input[1, string, true]),false), [plan_id=21391]
+         +- LocalTableScan [station_id#169641, nb_id#169642, inner#169643L, outer#169644L, west#169645L]
+
+
+===== large x large (station features x neighbour features)
+AdaptiveSparkPlan isFinalPlan=false
++- Project [station_id#164612, slot_epoch#164620L, ts#164613, rain_mm#164614, month#164615, doy#164616, date#164617, hour#164618, minute_of_day#164619, slot_ts#164621, r5#164622, r15#164623, r30#164624, r60#164625, r180#164626, prev15#164627, trend15#164628, wet_slots_60#164629L, peak5_60#164630, n_obs_60#164631L, n_obs_180#164632L, min_since_rain#164633, rain_today#164634, fut30#164635, ... 16 more fields]
+   +- SortMergeJoin [station_id#164612, slot_epoch#164620L], [station_id#165708, slot_epoch#165707L], LeftOuter
+      :- Sort [station_id#164612 ASC NULLS FIRST, slot_epoch#164620L ASC NULLS FIRST], false, 0
+      :  +- Exchange hashpartitioning(station_id#164612, slot_epoch#164620L, 64), ENSURE_REQUIREMENTS, [plan_id=21415]
+      :     +- FileScan parquet [station_id#164612,ts#164613,rain_mm#164614,month#164615,doy#164616,date#164617,hour#164618,minute_of_day#164619,slot_epoch#164620L,slot_ts#164621,r5#164622,r15#164623,r30#164624,r60#164625,r180#164626,prev15#164627,trend15#164628,wet_slots_60#164629L,peak5_60#164630,n_obs_60#164631L,n_obs_180#164632L,min_since_rain#164633,rain_today#164634,fut30#164635,... 2 more fields] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/prateekbansal/Apurwa/Study/NUS_MS/DSA5208-Sclable_Distribu..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<station_id:string,ts:timestamp,rain_mm:double,month:int,doy:int,date:date,hour:int,minute_...
+      +- Sort [station_id#165708 ASC NULLS FIRST, slot_epoch#165707L ASC NULLS FIRST], false, 0
+         +- Exchange hashpartitioning(station_id#165708, slot_epoch#165707L, 64), ENSURE_REQUIREMENTS, [plan_id=21416]
+            +- Project [slot_epoch#165707L, station_id#165708, inner_max#165709, outer_max#165710, west_max#165711, island_wetfrac#165712, island_mean_r30#165713, has_inner#165714, inner_mean#165715, inner_wetfrac#165716, has_outer#165717, outer_mean#165718, outer_wetfrac#165719, has_west#165720, west_mean#165721, west_wetfrac#165722]
+               +- Filter (isnotnull(station_id#165708) AND isnotnull(slot_epoch#165707L))
+                  +- FileScan parquet [slot_epoch#165707L,station_id#165708,inner_max#165709,outer_max#165710,west_max#165711,island_wetfrac#165712,island_mean_r30#165713,has_inner#165714,inner_mean#165715,inner_wetfrac#165716,has_outer#165717,outer_mean#165718,outer_wetfrac#165719,has_west#165720,west_mean#165721,west_wetfrac#165722,year#165723] Batched: true, DataFilters: [isnotnull(station_id#165708), isnotnull(slot_epoch#165707L)], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/prateekbansal/Apurwa/Study/NUS_MS/DSA5208-Sclable_Distribu..., PartitionFilters: [], PushedFilters: [IsNotNull(station_id), IsNotNull(slot_epoch)], ReadSchema: struct<slot_epoch:bigint,station_id:string,inner_max:double,outer_max:double,west_max:double,isla...
+
+
+===== grouped aggregation after it ran (AQE final plan)
+AdaptiveSparkPlan isFinalPlan=true
++- == Final Plan ==
+   *(2) HashAggregate(keys=[year#163793], functions=[sum(rain_mm#163787)], output=[year#163793, mm#169733])
+   +- AQEShuffleRead coalesced
+      +- ShuffleQueryStage 0
+         +- Exchange hashpartitioning(year#163793, 64), ENSURE_REQUIREMENTS, [plan_id=21446]
+            +- *(1) HashAggregate(keys=[year#163793], functions=[partial_sum(rain_mm#163787)], output=[year#163793, sum#169737])
+               +- *(1) ColumnarToRow
+                  +- FileScan parquet [rain_mm#163787,year#163793] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/prateekbansal/Apurwa/Study/NUS_MS/DSA5208-Sclable_Distribu..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<rain_mm:double>
++- == Initial Plan ==
+   HashAggregate(keys=[year#163793], functions=[sum(rain_mm#163787)], output=[year#163793, mm#169733])
+   +- Exchange hashpartitioning(year#163793, 64), ENSURE_REQUIREMENTS, [plan_id=21432]
+      +- HashAggregate(keys=[year#163793], functions=[partial_sum(rain_mm#163787)], output=[year#163793, sum#169737])
+         +- FileScan parquet [rain_mm#163787,year#163793] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/Users/prateekbansal/Apurwa/Study/NUS_MS/DSA5208-Sclable_Distribu..., PartitionFilters: [], PushedFilters: [], ReadSchema: struct<rain_mm:double>
+
+
