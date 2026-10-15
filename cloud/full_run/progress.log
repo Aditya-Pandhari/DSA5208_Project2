@@ -1,0 +1,15 @@
+[2026-10-14 08:11:39] copy notebook, coastline file and the eight CSVs from gs://dsa5208-rain-juhirishu16
+[2026-10-14 08:12:10] put the CSVs on HDFS at /tmp/dsa5208/data
+-rw-r--r--   2 juhirishu16 hadoop  881206891 2026-10-14 08:12 /tmp/dsa5208/data/HistoricalRainfallacrossSingapore2017.csv
+-rw-r--r--   2 juhirishu16 hadoop  769547920 2026-10-14 08:12 /tmp/dsa5208/data/HistoricalRainfallacrossSingapore2018.csv
+-rw-r--r--   2 juhirishu16 hadoop  842751786 2026-10-14 08:12 /tmp/dsa5208/data/HistoricalRainfallacrossSingapore2019.csv
+-rw-r--r--   2 juhirishu16 hadoop 1048946924 2026-10-14 08:12 /tmp/dsa5208/data/HistoricalRainfallacrossSingapore2020.csv
+-rw-r--r--   2 juhirishu16 hadoop 1158573170 2026-10-14 08:12 /tmp/dsa5208/data/HistoricalRainfallacrossSingapore2021.csv
+-rw-r--r--   2 juhirishu16 hadoop 1172655651 2026-10-14 08:12 /tmp/dsa5208/data/HistoricalRainfallacrossSingapore2022.csv
+-rw-r--r--   2 juhirishu16 hadoop 1107489275 2026-10-14 08:12 /tmp/dsa5208/data/HistoricalRainfallacrossSingapore2023.csv
+-rw-r--r--   2 juhirishu16 hadoop 1065873084 2026-10-14 08:12 /tmp/dsa5208/data/HistoricalRainfallacrossSingapore2024.csv
+[2026-10-14 08:12:44] Python environment for the notebook driver (same library versions as the laptop run)
+driver libs 3.0.6 1.26.4 3.11.2 25.0.0
+[2026-10-14 08:12:48] execute the notebook on YARN (log: /tmp/dsa5208/run.log)
+[2026-10-14 13:15:28] notebook finished: exit 0
+[2026-10-14 13:15:28] collect results: outputs/, models (metadata locally, Spark models from HDFS), notebook, logs

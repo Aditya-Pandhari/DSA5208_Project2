@@ -1,0 +1,68 @@
+stage,seconds
+1. ingest: CSV -> bronze Parquet,124.5
+2. data-quality audit,29.8
+3a. clean: snap + de-duplicate + station table,73.3
+3b. clean: dead-gauge station-months,9.1
+3c. clean: spike station-days,21.2
+3d. clean: write silver Parquet,37.3
+4a. station-day + coverage tables,7.7
+4b. island daily series + gap fill,1.3
+5.3 fixed-network sensitivity,1.3
+5.4 diurnal cycle,6.0
+5.5 intensity + concentration,3.9
+5.6 station climatology,0.8
+5.7 spatial coherence,10.3
+5.8 rain events,9.9
+5.9 extremes + base rates,115.7
+"7a. feature table (windows, neighbours, calendar, split)",318.0
+7b. feature table audit,85.6
+7c. leakage / label check,92.3
+8. training + evaluation sets,128.1
+9. baselines on 2023,3.5
+"10. fit LR_local (12,238,797 rows)",53.8
+"10. fit LR_spatial (12,238,797 rows)",46.4
+"10. fit LR_spatial_ix (12,238,797 rows)",50.2
+"10. fit LR_spatial_ix_reg (12,238,797 rows)",46.4
+"10. fit GBT_spatial_d5 (4,282,780 rows)",225.0
+"10. fit GBT_spatial_d7 (4,282,780 rows)",297.2
+11a. cut-offs on 2023,40.1
+11b. score 2024 test,125.9
+11c. monotonicity + MLlib cross-check,290.6
+11d. feature effects + threshold sweep,7.6
+12a. final-model station features + target (window functions),122.6
+12b. neighbour + island features (sparse join),82.1
+12c. prediction rows,53.0
+12d. row counts + climatology,2.5
+12e. leakage check (Stage 2 features),20.1
+12f. training sample (down-sampling + threshold expansion),13.1
+13a. correlation + ANOVA ranking,13.2
+14. CV LR selector size (3 settings x 4 folds),235.3
+14. CV LR (6 settings x 4 folds),466.7
+14. CV RF (4 settings x 4 folds),2120.0
+14. CV GBT (12 settings x 4 folds),6893.8
+15a. ablation fit: all selected features (Model B),115.3
+15a. ablation fit: without time,112.2
+15a. ablation fit: without location,114.7
+15a. ablation fit: without recent rain,109.4
+15a. ablation fit: without neighbours,107.4
+15a. ablation fit: without island,114.0
+15a. ablation fit: Model A: threshold + time + station only,101.0
+15b. fit RF on 2017-2022 (for calibration / cut-offs),227.4
+"15c. calibration check (fit on 1st half, judge on 2nd half of 2023)",582.4
+16a. refit LR on 2017-2023,66.3
+16a. refit RF on 2017-2023,926.8
+16a. refit GBT-B on 2017-2023,494.9
+16a. refit GBT-A on 2017-2023,432.3
+16b. score 2024: LR,75.8
+16b. score 2024: RF,226.9
+16b. score 2024: RF uncalibrated,210.1
+16b. score 2024: GBT (Model B),121.6
+16b. score 2024: GBT (Model B) uncalibrated,104.6
+16b. score 2024: GBT (Model A),94.8
+16b. score 2024: GBT (Model A) uncalibrated,76.2
+16b. score 2024: climatology,16.6
+16c. test metrics,521.4
+16d. calibration on 2024,1.5
+16e. cut-offs on 2023 + test confusion,93.3
+16f. skill by season / hour,2.4
+17. head-to-head on identical 2024 rows,37.3

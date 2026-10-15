@@ -19,7 +19,9 @@ Once executed it keeps the output of every cell, so the whole process can be rea
 ├── environment.yml           conda environment (Python 3.11, PySpark 3.5, Java 17)
 ├── DSA5208_Project2_Report.pdf   the project report (submitted); DSA5208_Project2_Report.docx is the editable source
 ├── reference/                Singapore coastline for the Figure 7 map + SOURCES.md (ODbL)
-├── cloud/                    Dataproc scalability benchmark: dataproc_benchmark.py + run_dataproc.sh (gcloud commands)
+├── cloud/                    Google Cloud Dataproc: scaling benchmark (dataproc_benchmark.py, run_dataproc.sh) and the
+│                             complete notebook run on a cluster (make_dataproc_notebook.py, master_run.sh,
+│                             run_full_pipeline_dataproc.sh; executed notebook and outputs in cloud/full_run/)
 ├── models/task2_final_rf/    FINAL Task 2 model: PipelineModel + calibrator + feature_spec.json (submitted)
 ├── models/task2_baseline_lr/ Stage 1 logistic model (interpretable baseline) + metadata.json
 ├── outputs/
@@ -76,6 +78,11 @@ then the `predict()` cell of Section 18. It loads `models/task2_final_rf/` and n
 predict("S77", "2024-10-01 15:00:00", 5)["probability"]          # P(> 5 mm in the next 30 min)
 predict("S77", "2024-10-01 15:00:00", 5, curve=True)["curve"]    # P(> h) for h on a grid from 0.2 to 60 mm
 ```
+
+**Running the complete notebook on Dataproc (optional, ~5 h, ~US$5).** `python cloud/make_dataproc_notebook.py`
+writes the cluster copy of the notebook; upload it, `cloud/master_run.sh` and the coastline file to `gs://<bucket>/code/full_run/`
+and follow `cloud/run_full_pipeline_dataproc.sh` in Cloud Shell. The cluster needs Cloud NAT to install the Python
+packages (its nodes have no public IP).
 
 **Running the cloud benchmark (optional).** `cloud/run_dataproc.sh` lists the `gcloud` commands, block by block:
 create a bucket in `asia-southeast1`, upload the eight CSVs and `cloud/dataproc_benchmark.py`, create a Dataproc 2.2
@@ -219,6 +226,24 @@ has two stages:
   The laptop is faster in absolute terms (fast cores, 128 GB, local SSD), but adding cores to one machine shares one
   memory bus and one disk, so its efficiency falls; adding workers adds CPU, memory and disk together, so doubling the
   cluster halved the time. The cluster was limited to 4 workers by the education project's 12-vCPU quota.
+
+* **The complete notebook on a Dataproc cluster (`cloud/full_run/`).** The whole notebook was also executed on
+  Google Cloud Dataproc 2.2 (master + 2 workers `n2-highmem-4`, Spark 3.5.3 on YARN, data layers on HDFS), generated
+  from the submitted notebook by `cloud/make_dataproc_notebook.py` (only the Spark master, the storage and Section 20
+  differ). It ran without errors in 290 minutes of timed work (3.9× the laptop's 74) and reproduced the results:
+
+  | Result | Laptop | Cluster |
+  |---|---|---|
+  | Cleaning, Task 1 tables and Stage 1 data sets (9 tables) | identical | identical (largest difference 1e-12) |
+  | Stage 1 logistic model: 2024 macro PR-AUC | 0.4462 | 0.4462 |
+  | Cross-validation: best setting of all four grids | — | same settings |
+  | Cross-validation: random-forest log loss | 0.0320 | 0.0319 |
+  | Final random forest on 2024: PR-AUC at 1 / 5 / 20 mm | 0.667 / 0.466 / 0.186 | 0.666 / 0.465 / 0.189 |
+  | Head-to-head at 5 mm: final vs Stage 1 PR-AUC | 0.461 vs 0.418 | 0.460 vs 0.418 |
+
+  The only Task 1 value that differs is the 99th-percentile event depth (0.26 mm), from Spark's approximate percentile.
+  The cluster-trained Spark model folders were not retrieved before the cluster was deleted (a quoting bug in the
+  collection step, now fixed in `cloud/master_run.sh`); the submitted model is the laptop-trained one.
 
 **Leakage checks.** Both stages are verified by an independent pandas recomputation: targets and features of random
 rows are recomputed from data truncated at the prediction time and must match the Spark values exactly

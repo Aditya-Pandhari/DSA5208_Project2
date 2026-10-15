@@ -38,7 +38,7 @@ stamp "notebook finished: $(tail -2 $LOG | tr '\n' ' ')"
 stamp "collect results: outputs/, models (metadata locally, Spark models from HDFS), notebook, logs"
 mkdir -p results && cp -r DSA5208_Project2_dataproc.ipynb outputs run.log progress.log results/ 2>/dev/null
 mkdir -p results/models && cp -r models/* results/models/ 2>/dev/null
-for m in task2_baseline_lr task2_final_rf; do hdfs dfs -copyToLocal -f $WORK/models/$m/* results/models/$m/ 2>/dev/null; done
+for m in task2_baseline_lr task2_final_rf; do hdfs dfs -copyToLocal -f "$WORK/models/$m/*" results/models/$m/; done   # quoted: HDFS expands the glob
 yarn application -list -appStates FINISHED 2>/dev/null | tail -3 > results/yarn_apps.txt
 hdfs dfs -du -s -h $WORK/data_parquet/* > results/hdfs_sizes.txt 2>/dev/null
 tar -czf dataproc_full_run.tar.gz -C results .

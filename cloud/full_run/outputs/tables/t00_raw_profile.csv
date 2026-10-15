@@ -1,0 +1,14 @@
+check,value
+rows,48538713.0
+unparseable_timestamp,0.0
+null_station_id,0.0
+null_reading,0.0
+negative_reading,0.0
+reading_gt_30mm_per_5min,1.0
+max_reading_mm,37.2
+distinct_reading_type,1.0
+distinct_reading_unit,1.0
+station_id_ne_device_id,0.0
+off_5min_grid_timestamp,1775327.0
+distinct_stations,91.0
+duplicate_station_slot_after_rounding,86.0

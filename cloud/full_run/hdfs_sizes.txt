@@ -1,0 +1,3 @@
+48.3 M   96.7 M   /tmp/dsa5208/data_parquet/bronze
+5.8 G    11.6 G   /tmp/dsa5208/data_parquet/gold
+410.6 M  821.3 M  /tmp/dsa5208/data_parquet/silver

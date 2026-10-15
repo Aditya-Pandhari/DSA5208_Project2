@@ -26,3 +26,6 @@ outputs/tables/_cv_partial/
 
 # course guide for the cloud setup (reference only)
 comp_res.pdf
+
+# downloaded Dataproc results archive (unpacked into cloud/full_run/)
+cloud/dataproc_full_run.tar.gz

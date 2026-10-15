@@ -1,0 +1,15 @@
+item,value
+OS,Linux-6.1.0-53-cloud-amd64-x86_64-with-glibc2.36
+CPU,Intel(R) Xeon(R) CPU @ 2.80GHz
+cluster,"Dataproc 2.2, master + 2 workers n2-highmem-4 (4 vCPU, 32 GB), YARN, HDFS"
+logical cores,4
+RAM (GB),31
+Python,3.11.11
+Java,"openjdk version ""11.0.30"" 2026-01-20"
+Spark,3.5.3
+Spark master,yarn
+default parallelism,2
+driver memory,16g
+shuffle partitions,96
+session time zone,Asia/Singapore
+pandas / NumPy / Matplotlib,3.0.6 / 1.26.4 / 3.11.2

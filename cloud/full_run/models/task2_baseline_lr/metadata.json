@@ -1,0 +1,86 @@
+{
+  "selected_model": "LR_spatial_ix",
+  "spec": {
+    "kind": "lr",
+    "spatial": true,
+    "interactions": true,
+    "regParam": 1e-05
+  },
+  "monotone_postprocess_cummin": false,
+  "threshold_grid": [
+    0.2,
+    0.5,
+    1.0,
+    2.0,
+    3.0,
+    5.0,
+    7.5,
+    10.0,
+    15.0,
+    20.0,
+    30.0
+  ],
+  "headline_thresholds": [
+    0.2,
+    1.0,
+    2.0,
+    5.0,
+    10.0,
+    20.0
+  ],
+  "features": [
+    "lat",
+    "lon",
+    "tod_sin",
+    "tod_cos",
+    "doy_sin",
+    "doy_cos",
+    "l_r5",
+    "l_acc15",
+    "l_acc30",
+    "l_acc60",
+    "l_acc180",
+    "l_max5_60",
+    "wet_slots_60",
+    "is_wet",
+    "lh",
+    "l_nbr30_mean",
+    "l_nbr30_max",
+    "l_nbr60_mean",
+    "l_nbr_r5_max",
+    "has_nbr",
+    "ix_l_r5",
+    "ix_l_acc15",
+    "ix_l_acc30",
+    "ix_l_acc60",
+    "ix_l_acc180",
+    "ix_l_nbr30_mean",
+    "ix_l_nbr30_max",
+    "ix_l_nbr_r5_max",
+    "ix_is_wet"
+  ],
+  "split": {
+    "train": "prediction time + 30 min <= 2023-01-01",
+    "validation": "2023",
+    "test": "2024"
+  },
+  "split_rows_prediction_times": {
+    "train": 32962257,
+    "validation": 6616826,
+    "test": 6277148
+  },
+  "operating_cutoff_p_F1_on_2023": {
+    "0.2": 0.13752505268937898,
+    "1.0": 0.285365583289263,
+    "2.0": 0.2638603221583521,
+    "5.0": 0.22408804865669935,
+    "10.0": 0.13752505268937898,
+    "20.0": 0.13752505268937898
+  },
+  "timestamp_convention": "row stamp = START of 5-min interval; prediction time t = last observed stamp + 5 min",
+  "neighbours": {
+    "k": 4,
+    "max_km": 10.0
+  },
+  "trained": "2026-10-14T09:01:53"
+}

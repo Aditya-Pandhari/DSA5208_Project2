@@ -1,0 +1,3 @@
+Total number of applications (application-types: [], states: [FINISHED] and tags: []):1
+                Application-Id	    Application-Name	    Application-Type	      User	     Queue	             State	       Final-State	       Progress	                       Tracking-URL
+application_1791958948416_0001	    dsa5208-rainfall	               SPARK	juhirishu16	   default	          FINISHED	         SUCCEEDED	           100%	dsa5208-full-m:18080/history/application_1791958948416_0001/1
