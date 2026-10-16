@@ -6,9 +6,9 @@
  },
  "calibrated": true,
  "cv_logloss": {
-  "LR": 0.039243956272568804,
-  "RF": 0.03201353726698786,
-  "GBT": 0.040449141941457614
+  "LR": 0.03931934354702045,
+  "RF": 0.03209200059466495,
+  "GBT": 0.04051864857665484
  },
  "features_in_order": [
   "thr",
@@ -37,12 +37,12 @@
   "island_mean_r30",
   "rain_today",
   "lon",
-  "season_idx",
   "has_west",
+  "season_idx",
+  "has_inner",
   "n_obs_180",
   "doy_sin",
   "n_obs_60",
-  "has_inner",
   "has_outer",
   "lat",
   "min_since_rain",
@@ -73,12 +73,12 @@
   "island_mean_r30",
   "rain_today",
   "lon",
-  "season_idx",
   "has_west",
+  "season_idx",
+  "has_inner",
   "n_obs_180",
   "doy_sin",
   "n_obs_60",
-  "has_inner",
   "has_outer",
   "lat",
   "min_since_rain"
@@ -106,5 +106,5 @@
  ],
  "min_since_rain_cap": 1440,
  "timestamp_convention": "row stamp = START of 5-min interval; prediction time t uses the slot stamped t - 5 min",
- "trained": "2026-10-15T14:25:31"
+ "trained": "2026-10-16T17:31:34"
 }

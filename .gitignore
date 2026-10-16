@@ -29,3 +29,6 @@ comp_res.pdf
 
 # downloaded Dataproc results archive (unpacked into cloud/full_run/)
 cloud/dataproc_full_run.tar.gz
+
+# course lecture slides (reference only)
+Slides/

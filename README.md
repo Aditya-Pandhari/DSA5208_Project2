@@ -79,6 +79,12 @@ predict("S77", "2024-10-01 15:00:00", 5)["probability"]          # P(> 5 mm in t
 predict("S77", "2024-10-01 15:00:00", 5, curve=True)["curve"]    # P(> h) for h on a grid from 0.2 to 60 mm
 ```
 
+`predict()` always scores one fixed grid of thresholds (61 log-spaced points over 0.2–60 mm plus the headline
+thresholds), applies a running minimum along it and interpolates the requested threshold in log *h*, so separate
+calls can never return a higher probability for a higher threshold. Readings are used as *measured* at or before
+`t − 5 min`; whether they are also *published* by `t` (data.gov.sg publishes 2–10 minutes after the stamp) is an
+operational question, see Section 4.3 of the notebook.
+
 **Running the complete notebook on Dataproc (optional, ~5 h, ~US$5).** `python cloud/make_dataproc_notebook.py`
 writes the cluster copy of the notebook (`cloud/DSA5208_Project2_dataproc.ipynb`); upload it, `cloud/master_run.sh` and the coastline file to `gs://<bucket>/code/full_run/`
 and follow `cloud/run_full_pipeline_dataproc.sh` in Cloud Shell. The cluster needs Cloud NAT to install the Python
@@ -103,7 +109,7 @@ reads that file to draw the comparison.
 | B. Task 1 | 5. Weather patterns | annual totals, seasonal cycle, robustness to the changing network, diurnal cycle, intensity, spatial pattern, spatial coherence, rain events, extremes, trend tests (`fig01`–`fig10`) |
 | C. Task 2 | 6. Problem definition | target, inputs, timestamp convention, chronological split, metrics |
 | | 7. Feature engineering | trailing rain, neighbouring gauges, calendar → **gold** feature table; independent leakage check |
-| | 8. Training / evaluation sets | threshold as an input, label-independent sampling |
+| | 8. Training / evaluation sets | threshold as an input, label-independent hash sampling (Stage 1) |
 | | 9. Baselines | climatology and base rate |
 | | 10. Stage 1 models | 4 logistic regressions, 2 gradient-boosted tree classifiers; selection on 2023 |
 | | 11. Stage 1 evaluation | Stage 1 model vs baselines on 2024; saved as the interpretable baseline; `fig11`–`fig15` |
@@ -197,20 +203,20 @@ has two stages:
   row. Section 17 scores it and the Stage 1 model on **identical** 2024 rows (`t41_task2_head_to_head.csv`).
 
   **Result.** The **random forest** (100 trees, depth 12, all 33 candidate features) has the lowest cross-validated
-  log loss (0.0320 ± 0.0016, against 0.0392 for logistic regression and 0.0404 for GBT; `t2_cv_results.csv`), and a
-  Platt calibrator was kept after the held-out 2023 check. On every 2024 row (`t2_test_metrics.csv`):
+  log loss (0.0321 ± 0.0018, against 0.0393 for logistic regression and 0.0405 for GBT; `t2_cv_results.csv`), and a
+  Platt calibrator was kept after the held-out 2023 check. On every 2024 row (6,371,188 prediction times; `t2_test_metrics.csv`):
 
   | *h* (mm) | event rate | PR-AUC | ROC-AUC | Brier | log loss | Brier skill | precision | recall | F1 |
   |---|---|---|---|---|---|---|---|---|---|
-  | 0.5 | 3.63 % | 0.721 | 0.964 | 0.0174 | 0.0645 | 0.492 | 0.721 | 0.584 | 0.645 |
-  | 1 | 2.57 % | 0.666 | 0.965 | 0.0136 | 0.0515 | 0.450 | 0.662 | 0.569 | 0.612 |
-  | 2 | 1.69 % | 0.586 | 0.965 | 0.0102 | 0.0397 | 0.383 | 0.593 | 0.518 | 0.553 |
-  | 5 | 0.84 % | 0.466 | 0.968 | 0.0058 | 0.0239 | 0.294 | 0.499 | 0.451 | 0.474 |
-  | 10 | 0.38 % | 0.349 | 0.975 | 0.0030 | 0.0129 | 0.213 | 0.398 | 0.394 | 0.396 |
-  | 20 | 0.10 % | 0.185 | 0.981 | 0.0009 | 0.0046 | 0.095 | 0.285 | 0.259 | 0.271 |
+  | 0.5 | 3.63 % | 0.721 | 0.965 | 0.0174 | 0.0645 | 0.493 | 0.680 | 0.618 | 0.648 |
+  | 1 | 2.57 % | 0.666 | 0.967 | 0.0136 | 0.0515 | 0.450 | 0.689 | 0.547 | 0.610 |
+  | 2 | 1.69 % | 0.587 | 0.965 | 0.0101 | 0.0396 | 0.386 | 0.579 | 0.531 | 0.554 |
+  | 5 | 0.84 % | 0.465 | 0.968 | 0.0058 | 0.0240 | 0.293 | 0.491 | 0.455 | 0.472 |
+  | 10 | 0.38 % | 0.348 | 0.973 | 0.0030 | 0.0129 | 0.213 | 0.399 | 0.400 | 0.399 |
+  | 20 | 0.10 % | 0.183 | 0.981 | 0.0009 | 0.0046 | 0.096 | 0.292 | 0.257 | 0.273 |
 
   On identical Stage 1 rows (1,255,003 per threshold, labels matched exactly) the random forest beats the Stage 1
-  logistic model on ROC-AUC and log loss at all five common thresholds and on PR-AUC at 4 of 5; the PR-AUCs are practically tied at 20 mm (0.1856 vs 0.1858) (at 5 mm: PR-AUC 0.462 vs 0.418, ROC-AUC 0.970 vs 0.912). Spark's tree models are not
+  logistic model on PR-AUC, ROC-AUC and log loss at all five common thresholds (at 5 mm: PR-AUC 0.459 vs 0.418, ROC-AUC 0.970 vs 0.912). Spark's tree models are not
   bit-for-bit deterministic across runs, so these numbers move in the third decimal.
 
 * **Scalability (Section 20).** The cleaning job (read 48.5 M bronze rows, snap, de-duplicate, aggregate to
@@ -219,13 +225,13 @@ has two stages:
 
   | Platform | Configuration | Cores | Wall time (s) | Speed-up | Efficiency |
   |---|---|---|---|---|---|
-  | Laptop | `local[2]` / `[4]` / `[8]` / `[16]` | 2 / 4 / 8 / 16 | 26.3 / 13.5 / 8.1 / 5.9 | 1.00 / 1.95 / 3.25 / 4.46× | 100 / 97 / 81 / 56 % |
+  | Laptop | `local[2]` / `[4]` / `[8]` / `[16]` | 2 / 4 / 8 / 16 | 26.1 / 13.4 / 8.0 / 6.0 | 1.00 / 1.95 / 3.26 / 4.35× | 100 / 97 / 82 / 54 % |
   | Dataproc | 2 / 4 workers × `n2-standard-2` | 4 / 8 | 74.8 / 37.3 | 1.00 / 2.01× | 100 / 100 % |
 
-  **Strong scaling and Amdahl's law:** fitting T(n) = a + b/n to the laptop's median times gives T(n) = 2.40 + 47.2/n s, a
-  serial share of 4.8 %, so no number of cores could make this job more than 21× faster than one core. **Weak scaling**
-  (1 year on 2 cores up to 8 years on 16, `t45_weak_scaling.csv`): the data grows 9.2× while the time rises from 3.3 s to
-  5.8 s, a scaled speed-up of 5.3× on 16 cores (ideal 8×, efficiency 66 %; Gustafson's law).
+  **Strong scaling and Amdahl's law:** fitting T(n) = a + b/n to the laptop's median times gives T(n) = 2.45 + 46.6/n s, a
+  serial share of 5.0 %, so no number of cores could make this job more than 20× faster than one core. **Weak scaling**
+  (1 year on 2 cores up to 8 years on 16, `t45_weak_scaling.csv`): the data grows 9.2× while the time rises from 3.4 s to
+  5.9 s, a scaled speed-up of 5.3× on 16 cores (ideal 8×, efficiency 67 %; Gustafson's law).
 
   The laptop is faster in absolute terms (fast cores, 128 GB, local SSD), but adding cores to one machine shares one
   memory bus and one disk, so its efficiency falls; adding workers adds CPU, memory and disk together, so doubling the
@@ -252,7 +258,15 @@ has two stages:
 **Leakage checks.** Both stages are verified by an independent pandas recomputation: targets and features of random
 rows are recomputed from data truncated at the prediction time and must match the Spark values exactly
 (Sections 7.1 and 12.2). Neighbour denominators in Stage 2 count only gauges that have reported by the prediction
-time.
+time, and both stages purge the train/test boundary (Stage 2 drops the end-of-2023 rows whose 30-minute target window
+reaches into 2024). These checks verify the time boundary of the window computations on the cleaned data; they do not
+claim that every input was published by the prediction time or that the month/day-level gauge-fault rules could run
+live.
+
+**Sampling.** Stage 1 samples independently of the label (a hash of station, time and threshold), so its sample is
+unbiased as it stands. Stage 2 keeps every row with rain in the next 30 minutes, so its selection depends on the
+outcome; the inverse inclusion weights (1 / 0.03 for the kept quiet rows) restore unbiased weighted estimates, which
+the notebook checks against the population positive rate.
 
 **Limitations.** One test year; thin data above 20 mm; no radar or satellite inputs; local-mode Spark only; the GBT
 in Stage 1 is uncalibrated (Stage 2 calibrates its candidates).
