@@ -53,8 +53,9 @@ No other code is needed: the notebook does not import any project modules. Its o
    ```bash
    jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.timeout=-1 DSA5208_Project2.ipynb
    ```
-   A full run from scratch takes about 1 h 30 min on the machine in §4: Sections 0–11 about 10 minutes, the
-   year-blocked cross-validation in Section 14 about 35–45 minutes with `CV_PARALLELISM=4`, the rest about 30 minutes.
+   A full run from scratch takes about 1 h 20 min on the machine in §4 (the submitted run: 80 minutes wall-clock,
+   73 minutes of timed stages): Sections 0–11 about 10 minutes, the year-blocked cross-validation in Section 14
+   about 37 minutes with `CV_PARALLELISM=4`, the rest about 25 minutes.
    Keep the machine awake and plugged in for the whole run (on macOS: `caffeinate -is jupyter nbconvert ...`); a
    laptop that sleeps mid-run breaks the Spark session. The run writes `data_parquet/`, `outputs/` and `models/`.
    Optional environment variables:
@@ -79,9 +80,11 @@ predict("S77", "2024-10-01 15:00:00", 5)["probability"]          # P(> 5 mm in t
 predict("S77", "2024-10-01 15:00:00", 5, curve=True)["curve"]    # P(> h) for h on a grid from 0.2 to 60 mm
 ```
 
-`predict()` always scores one fixed grid of thresholds (61 log-spaced points over 0.2–60 mm plus the headline
-thresholds), applies a running minimum along it and interpolates the requested threshold in log *h*, so separate
-calls can never return a higher probability for a higher threshold. Readings are used as *measured* at or before
+`predict()` scores the same six thresholds that the notebook evaluates (0.5, 1, 2, 5, 10, 20 mm), applies the same
+running minimum, and so returns the evaluated probability at any of them; other thresholds are interpolated in log *h*
+between those points, with the curve extended to 0.2, 30 and 60 mm from the model's values there and clipped so it
+never increases. Separate calls therefore cannot return a higher probability for a higher threshold. Readings are used
+as *measured* at or before
 `t − 5 min`; whether they are also *published* by `t` (data.gov.sg publishes 2–10 minutes after the stamp) is an
 operational question, see Section 4.3 of the notebook.
 
@@ -198,22 +201,22 @@ has two stages:
 * **Stage 2 (Sections 12–17): the final model.** Richer features (minutes since the last rain, storm trend, three
   neighbour rings including gauges 5–20 km to the west, island-wide wet share, rain so far today), feature selection
   inside the pipeline, and **4-fold year-blocked cross-validation** with hyper-parameter grids over logistic
-  regression, random forest and gradient-boosted trees (25 settings). The model with the lowest cross-validated log
+  regression, random forest and gradient-boosted trees (22 model settings plus 3 selector sizes, 100 fits in all). The model with the lowest cross-validated log
   loss is refitted on 2017–2023, calibrated if a held-out check on 2023 says it helps, and tested once on every 2024
   row. Section 17 scores it and the Stage 1 model on **identical** 2024 rows (`t41_task2_head_to_head.csv`).
 
   **Result.** The **random forest** (100 trees, depth 12, all 33 candidate features) has the lowest cross-validated
-  log loss (0.0321 ± 0.0018, against 0.0393 for logistic regression and 0.0405 for GBT; `t2_cv_results.csv`), and a
+  log loss (0.0319 ± 0.0018, against 0.0391 for logistic regression and 0.0403 for GBT; `t2_cv_results.csv`), and a
   Platt calibrator was kept after the held-out 2023 check. On every 2024 row (6,371,188 prediction times; `t2_test_metrics.csv`):
 
   | *h* (mm) | event rate | PR-AUC | ROC-AUC | Brier | log loss | Brier skill | precision | recall | F1 |
   |---|---|---|---|---|---|---|---|---|---|
-  | 0.5 | 3.63 % | 0.721 | 0.965 | 0.0174 | 0.0645 | 0.493 | 0.680 | 0.618 | 0.648 |
-  | 1 | 2.57 % | 0.666 | 0.967 | 0.0136 | 0.0515 | 0.450 | 0.689 | 0.547 | 0.610 |
-  | 2 | 1.69 % | 0.587 | 0.965 | 0.0101 | 0.0396 | 0.386 | 0.579 | 0.531 | 0.554 |
-  | 5 | 0.84 % | 0.465 | 0.968 | 0.0058 | 0.0240 | 0.293 | 0.491 | 0.455 | 0.472 |
-  | 10 | 0.38 % | 0.348 | 0.973 | 0.0030 | 0.0129 | 0.213 | 0.399 | 0.400 | 0.399 |
-  | 20 | 0.10 % | 0.183 | 0.981 | 0.0009 | 0.0046 | 0.096 | 0.292 | 0.257 | 0.273 |
+  | 0.5 | 3.63 % | 0.721 | 0.965 | 0.0174 | 0.0645 | 0.492 | 0.715 | 0.589 | 0.646 |
+  | 1 | 2.57 % | 0.667 | 0.966 | 0.0137 | 0.0516 | 0.448 | 0.645 | 0.582 | 0.612 |
+  | 2 | 1.69 % | 0.587 | 0.966 | 0.0101 | 0.0395 | 0.386 | 0.567 | 0.543 | 0.555 |
+  | 5 | 0.84 % | 0.465 | 0.969 | 0.0059 | 0.0240 | 0.293 | 0.484 | 0.459 | 0.471 |
+  | 10 | 0.38 % | 0.351 | 0.973 | 0.0030 | 0.0130 | 0.211 | 0.420 | 0.380 | 0.399 |
+  | 20 | 0.10 % | 0.185 | 0.982 | 0.0009 | 0.0045 | 0.101 | 0.263 | 0.284 | 0.273 |
 
   On identical Stage 1 rows (1,255,003 per threshold, labels matched exactly) the random forest beats the Stage 1
   logistic model on PR-AUC, ROC-AUC and log loss at all five common thresholds (at 5 mm: PR-AUC 0.459 vs 0.418, ROC-AUC 0.970 vs 0.912). Spark's tree models are not
@@ -225,13 +228,14 @@ has two stages:
 
   | Platform | Configuration | Cores | Wall time (s) | Speed-up | Efficiency |
   |---|---|---|---|---|---|
-  | Laptop | `local[2]` / `[4]` / `[8]` / `[16]` | 2 / 4 / 8 / 16 | 26.1 / 13.4 / 8.0 / 6.0 | 1.00 / 1.95 / 3.26 / 4.35× | 100 / 97 / 82 / 54 % |
+  | Laptop | `local[2]` / `[4]` / `[8]` / `[16]` | 2 / 4 / 8 / 16 | 27.8 / 13.6 / 8.0 / 5.7 | 1.00 / 2.04 / 3.48 / 4.88× | 100 / 102 / 87 / 61 % |
   | Dataproc | 2 / 4 workers × `n2-standard-2` | 4 / 8 | 74.8 / 37.3 | 1.00 / 2.01× | 100 / 100 % |
 
-  **Strong scaling and Amdahl's law:** fitting T(n) = a + b/n to the laptop's median times gives T(n) = 2.45 + 46.6/n s, a
-  serial share of 5.0 %, so no number of cores could make this job more than 20× faster than one core. **Weak scaling**
-  (1 year on 2 cores up to 8 years on 16, `t45_weak_scaling.csv`): the data grows 9.2× while the time rises from 3.4 s to
-  5.9 s, a scaled speed-up of 5.3× on 16 cores (ideal 8×, efficiency 67 %; Gustafson's law).
+  **Strong scaling and Amdahl's law:** fitting T(n) = a + b/n to the laptop's median times gives T(n) = 1.79 + 51.1/n s, a
+  serial share of 3.4 %; under that fitted model the ceiling is 30× over one core — an extrapolation of a two-parameter
+  fit to four points, not a measurement. **Weak scaling**
+  (1 year on 2 cores up to 8 years on 16, `t45_weak_scaling.csv`): the data grows 9.2× while the time rises from 3.3 s to
+  5.8 s, a scaled speed-up of 5.3× on 16 cores (ideal 8×, efficiency 66 %; Gustafson's law).
 
   The laptop is faster in absolute terms (fast cores, 128 GB, local SSD), but adding cores to one machine shares one
   memory bus and one disk, so its efficiency falls; adding workers adds CPU, memory and disk together, so doubling the
@@ -239,17 +243,18 @@ has two stages:
 
 * **The complete notebook on a Dataproc cluster (`cloud/full_run/`).** The whole notebook was also executed on
   Google Cloud Dataproc 2.2 (master + 2 workers `n2-highmem-4`, Spark 3.5.3 on YARN, data layers on HDFS), generated
-  from the submitted notebook by `cloud/make_dataproc_notebook.py` (only the Spark master, the storage and Section 20
-  differ). It ran without errors in 290 minutes of timed work (3.9× the laptop's 74) and reproduced the results:
+  from the notebook **as it stood on 14 October 2026** by `cloud/make_dataproc_notebook.py` — an earlier version that
+  predates the Spark-plan cell 12.4, the strong/weak-scaling rewrite of Section 20, the Stage 2 train/test boundary
+  purge and the fixed-grid `predict()` (see `cloud/full_run/README.md`). It ran without errors in 290 minutes of timed work (4.0× the laptop's 73) and reproduced the results:
 
   | Result | Laptop | Cluster |
   |---|---|---|
   | Cleaning, Task 1 tables and Stage 1 data sets (9 tables) | identical | identical (largest difference 1e-12) |
   | Stage 1 logistic model: 2024 macro PR-AUC | 0.4462 | 0.4462 |
   | Cross-validation: best setting of all four grids | — | same settings |
-  | Cross-validation: random-forest log loss | 0.0320 | 0.0319 |
-  | Final random forest on 2024: PR-AUC at 1 / 5 / 20 mm | 0.667 / 0.466 / 0.186 | 0.666 / 0.465 / 0.189 |
-  | Head-to-head at 5 mm: final vs Stage 1 PR-AUC | 0.461 vs 0.418 | 0.460 vs 0.418 |
+  | Cross-validation: random-forest log loss | 0.0319 | 0.0319 |
+  | Final random forest on 2024: PR-AUC at 1 / 5 / 20 mm | 0.667 / 0.465 / 0.185 | 0.666 / 0.465 / 0.189 |
+  | Head-to-head at 5 mm: final vs Stage 1 PR-AUC | 0.459 vs 0.418 | 0.460 vs 0.418 |
 
   The only Task 1 value that differs is the 99th-percentile event depth (0.26 mm), from Spark's approximate percentile.
   The cluster-trained Spark model folders were not retrieved before the cluster was deleted (a quoting bug in the
@@ -259,7 +264,8 @@ has two stages:
 rows are recomputed from data truncated at the prediction time and must match the Spark values exactly
 (Sections 7.1 and 12.2). Neighbour denominators in Stage 2 count only gauges that have reported by the prediction
 time, and both stages purge the train/test boundary (Stage 2 drops the end-of-2023 rows whose 30-minute target window
-reaches into 2024). These checks verify the time boundary of the window computations on the cleaned data; they do not
+reaches into 2024; the three boundaries between its cross-validation folds are not purged — about 370 of 13.7 M rows
+reach up to 20 minutes into the next fold). These checks verify the time boundary of the window computations on the cleaned data; they do not
 claim that every input was published by the prediction time or that the month/day-level gauge-fault rules could run
 live.
 

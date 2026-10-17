@@ -32,3 +32,6 @@ cloud/dataproc_full_run.tar.gz
 
 # course lecture slides (reference only)
 Slides/
+
+# PDF exports of the lecture slides (reference only; remove the tracked copies with: git rm -r --cached Slides_export)
+Slides_export/

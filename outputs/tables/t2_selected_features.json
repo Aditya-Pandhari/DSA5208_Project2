@@ -27,12 +27,12 @@
   "lon",
   "has_west",
   "season_idx",
-  "has_inner",
   "n_obs_180",
+  "has_inner",
+  "lat",
+  "has_outer",
   "doy_sin",
   "n_obs_60",
-  "has_outer",
-  "lat",
   "min_since_rain"
  ],
  "dropped": []

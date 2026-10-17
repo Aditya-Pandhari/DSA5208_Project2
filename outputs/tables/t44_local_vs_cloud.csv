@@ -1,7 +1,7 @@
 platform,config,cores,seconds,range,scale,speedup,efficiency
-"Laptop (one machine, local SSD)",local[2],2,26.1,,1.0,1.0,1.0
-"Laptop (one machine, local SSD)",local[4],4,13.4,,2.0,1.9477611940298507,0.9738805970149254
-"Laptop (one machine, local SSD)",local[8],8,8.0,,4.0,3.2625,0.815625
-"Laptop (one machine, local SSD)",local[16],16,6.0,,8.0,4.3500000000000005,0.5437500000000001
+"Laptop (one machine, local SSD)",local[2],2,27.8,,1.0,1.0,1.0
+"Laptop (one machine, local SSD)",local[4],4,13.6,,2.0,2.044117647058824,1.022058823529412
+"Laptop (one machine, local SSD)",local[8],8,8.0,,4.0,3.475,0.86875
+"Laptop (one machine, local SSD)",local[16],16,5.7,,8.0,4.87719298245614,0.6096491228070176
 Dataproc cluster (data in Cloud Storage),2 workers x n2-standard-2,4,74.8,73.4-76.1,1.0,1.0,1.0
 Dataproc cluster (data in Cloud Storage),4 workers x n2-standard-2,8,37.3,33.9-43.7,2.0,2.0053619302949057,1.0026809651474529
